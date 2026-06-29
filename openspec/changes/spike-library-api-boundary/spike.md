@@ -2,12 +2,17 @@
 
 ## Status
 
-Worked through enough to establish the first code and spec boundary. Remaining unchecked items
-require browser/hardware or server endpoint follow-up.
+Phase 1 is complete locally. The package boundary is Deno-native, exports the intended modules, and
+passes JSR dry-run checks after adding explicit public API types.
 
-## Evidence
+## Proven
 
-- Deno package scaffold and unit tests exist in `src/` and `tests/`.
-- Current checks run with `deno task check`.
-- Research sources included Automerge Repo package docs/search results, MDN WebAuthn extension docs,
-  W3C PRF explainer, and browser-support notes around PRF/hmac-secret.
+- `deno.json` exports root, auth, crypto, KV, storage, and sync modules.
+- `deno task check` covers formatting, linting, and tests.
+- `deno publish --dry-run` passes with no slow-type public API errors.
+- Repo-local `AGENTS.md` documents the check command, OpenSpec validation command, and
+  secret-handling rule.
+
+## Remaining
+
+- Actual JSR publication should wait until the combined POC API stabilizes.

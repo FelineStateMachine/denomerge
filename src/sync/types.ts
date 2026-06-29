@@ -18,6 +18,6 @@ export interface SyncPolicy {
   expiresAt: Date
 }
 
-export function canSync(policy: SyncPolicy, now = new Date()): boolean {
+export function canSync(policy: SyncPolicy, now: Date = new Date()): boolean {
   return policy.isKeyPresent && policy.expiresAt.getTime() > now.getTime()
 }

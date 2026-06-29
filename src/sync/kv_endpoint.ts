@@ -34,7 +34,9 @@ export interface CreateKvSyncHandlerOptions {
   now?: () => Date
 }
 
-export function createKvSyncHandler(options: CreateKvSyncHandlerOptions) {
+export type KvSyncHandler = (request: Request) => Promise<Response>
+
+export function createKvSyncHandler(options: CreateKvSyncHandlerOptions): KvSyncHandler {
   return async (request: Request): Promise<Response> => {
     const url = new URL(request.url)
     const match = url.pathname.match(/^\/sync\/([^/]+)\/([^/]+)\/([^/]+)$/)
