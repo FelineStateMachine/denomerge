@@ -28,9 +28,42 @@ export type PrfAuthenticationOptions = {
   extensions: { prf: { eval: { first: Uint8Array } } }
 }
 
-export type PublicKeyCredentialWithPrf = {
+export interface CredentialLike {
+  readonly id?: string
+  readonly type?: string
+}
+
+export interface PublicKeyCredentialWithPrf extends CredentialLike {
   getClientExtensionResults(): {
     prf?: { results?: { first?: ArrayBuffer } }
+  }
+}
+
+export interface CredentialCreationOptionsLike {
+  publicKey: PrfRegistrationOptions
+}
+
+export interface CredentialRequestOptionsLike {
+  publicKey: PrfAuthenticationOptions
+}
+
+export interface WebAuthnCredentialClient {
+  create(options: CredentialCreationOptionsLike): Promise<CredentialLike | null>
+  get(options: CredentialRequestOptionsLike): Promise<CredentialLike | null>
+}
+
+export interface PerformPrfRegistrationInput extends BuildRegistrationOptionsInput {
+  client?: WebAuthnCredentialClient
+}
+
+export interface PerformPrfAuthenticationInput extends BuildAuthenticationOptionsInput {
+  client?: WebAuthnCredentialClient
+}
+
+export class PrfCeremonyError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = "PrfCeremonyError"
   }
 }
 
@@ -119,4 +152,53 @@ export function buildPrfAuthenticationOptions(
 export function getFirstPrfResult(credential: PublicKeyCredentialWithPrf): Uint8Array | undefined {
   const first = credential.getClientExtensionResults().prf?.results?.first
   return first ? new Uint8Array(first) : undefined
+}
+
+export async function performPrfRegistration(
+  input: PerformPrfRegistrationInput,
+): Promise<CredentialLike> {
+  const client = input.client ?? getGlobalCredentialsClient()
+  if (!client) {
+    throw new PrfCeremonyError("WebAuthn credentials API is not available")
+  }
+
+  const credential = await client.create({ publicKey: buildPrfRegistrationOptions(input) })
+  if (!credential) {
+    throw new PrfCeremonyError("WebAuthn registration did not return a public-key credential")
+  }
+
+  return credential
+}
+
+export async function performPrfAuthentication(
+  input: PerformPrfAuthenticationInput,
+): Promise<Uint8Array> {
+  const client = input.client ?? getGlobalCredentialsClient()
+  if (!client) {
+    throw new PrfCeremonyError("WebAuthn credentials API is not available")
+  }
+
+  const credential = await client.get({ publicKey: buildPrfAuthenticationOptions(input) })
+  if (!isCredentialWithPrf(credential)) {
+    throw new PrfCeremonyError("WebAuthn authentication did not return PRF extension results")
+  }
+
+  const result = getFirstPrfResult(credential)
+  if (!result) {
+    throw new PrfCeremonyError("WebAuthn authentication did not produce a first PRF result")
+  }
+
+  return result
+}
+
+function isCredentialWithPrf(
+  credential: CredentialLike | null,
+): credential is PublicKeyCredentialWithPrf {
+  return typeof credential === "object" && credential !== null &&
+    "getClientExtensionResults" in credential
+}
+
+function getGlobalCredentialsClient(): WebAuthnCredentialClient | undefined {
+  return (globalThis.navigator as { credentials?: WebAuthnCredentialClient } | undefined)
+    ?.credentials
 }

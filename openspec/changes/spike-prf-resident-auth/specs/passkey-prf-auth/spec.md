@@ -36,3 +36,16 @@ without exposing the PRF output to the server contract.
 - **WHEN** sync keys are derived
 - **THEN** the derived auth key and encryption key are distinct byte ranges
 - **AND** each derived key is 32 bytes
+
+### Requirement: Injectable WebAuthn ceremony client
+
+The library SHALL allow callers and tests to provide a credentials client for PRF registration and
+authentication ceremonies so hardware key presses can be mocked during automated tests.
+
+#### Scenario: Mock client returns PRF output
+
+- **GIVEN** an injected credentials client that records create/get options and returns a PRF result
+- **WHEN** registration and authentication are performed through the library helpers
+- **THEN** the registration ceremony uses resident-key options
+- **AND** the authentication ceremony uses user verification and PRF extension options
+- **AND** the helper returns the first PRF result bytes from the mock credential

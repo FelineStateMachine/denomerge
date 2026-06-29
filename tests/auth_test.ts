@@ -2,8 +2,14 @@ import { assertEquals, assertExists, assertNotEquals } from "@std/assert"
 import {
   buildPrfAuthenticationOptions,
   buildPrfRegistrationOptions,
+  type CredentialCreationOptionsLike,
+  type CredentialLike,
+  type CredentialRequestOptionsLike,
   deriveDenomergePrfSalt,
   deriveSyncKeys,
+  performPrfAuthentication,
+  performPrfRegistration,
+  type WebAuthnCredentialClient,
 } from "../src/index.ts"
 
 Deno.test("deriveDenomergePrfSalt is deterministic and scoped", async () => {
@@ -46,4 +52,47 @@ Deno.test("builds resident PRF registration and authentication options", () => {
   })
   assertEquals(auth.rpId, "example.com")
   assertExists(auth.extensions?.prf)
+})
+
+Deno.test("performs PRF ceremonies through an injectable WebAuthn client", async () => {
+  const prfResult = new Uint8Array(32).fill(9)
+  let createOptions: CredentialCreationOptionsLike | undefined
+  let getOptions: CredentialRequestOptionsLike | undefined
+
+  const client: WebAuthnCredentialClient = {
+    create: (options) => {
+      createOptions = options
+      return Promise.resolve({ id: "resident", type: "public-key" } satisfies CredentialLike)
+    },
+    get: (options) => {
+      getOptions = options
+      return Promise.resolve({
+        getClientExtensionResults: () => ({
+          prf: { results: { first: prfResult.buffer } },
+        }),
+      } as unknown as CredentialLike)
+    },
+  }
+
+  const registration = await performPrfRegistration({
+    client,
+    rpId: "example.com",
+    rpName: "Example",
+    userId: new Uint8Array([1, 2, 3]),
+    userName: "dami",
+    userDisplayName: "Dami",
+    challenge: new Uint8Array([4, 5, 6]),
+  })
+  assertEquals(registration.type, "public-key")
+  assertEquals(createOptions?.publicKey?.authenticatorSelection?.residentKey, "required")
+
+  const result = await performPrfAuthentication({
+    client,
+    rpId: "example.com",
+    challenge: new Uint8Array([7, 8, 9]),
+    salt: new Uint8Array(32).fill(3),
+  })
+  assertEquals([...result], [...prfResult])
+  assertEquals(getOptions?.publicKey?.userVerification, "required")
+  assertExists(getOptions?.publicKey?.extensions)
 })

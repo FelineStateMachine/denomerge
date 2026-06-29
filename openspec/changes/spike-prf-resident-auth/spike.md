@@ -2,12 +2,19 @@
 
 ## Status
 
-Worked through enough to establish the first code and spec boundary. Remaining unchecked items
-require browser/hardware or server endpoint follow-up.
+Complete locally with hardware access mocked. The code now exposes injectable WebAuthn ceremony
+helpers, so tests can stand in for the physical key press and still verify resident-key and PRF
+option wiring.
 
-## Evidence
+## Proven
 
-- Deno package scaffold and unit tests exist in `src/` and `tests/`.
-- Current checks run with `deno task check`.
-- Research sources included Automerge Repo package docs/search results, MDN WebAuthn extension docs,
-  W3C PRF explainer, and browser-support notes around PRF/hmac-secret.
+- Registration options require discoverable credentials and user verification.
+- Authentication options request user verification and PRF evaluation for a scoped salt.
+- PRF output is converted into client-only bytes and fed into separated sync-key derivation.
+- Automated tests cover the ceremony path through a stubbed credentials client instead of a local
+  FIDO2 key.
+
+## Remaining
+
+- Physical authenticator compatibility still needs real browser/device validation outside this
+  environment.

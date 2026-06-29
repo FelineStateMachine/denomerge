@@ -5,4 +5,5 @@
 - [x] Add deterministic PRF salt and HKDF sync-key derivation helpers.
 - [x] Add unit tests for deterministic salts, separated keys, and required
       resident/user-verification options.
-- [ ] Follow-up: browser integration test with a virtual or physical FIDO2 authenticator.
+- [x] Add mocked WebAuthn ceremony test with an injectable credentials client, standing in for the
+      physical key press.
