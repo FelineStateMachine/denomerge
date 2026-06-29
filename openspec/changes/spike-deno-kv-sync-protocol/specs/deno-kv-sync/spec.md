@@ -32,3 +32,20 @@ and the session expiry is in the future.
 - **GIVEN** a sync policy with key presence true and an expired timestamp
 - **WHEN** the policy is evaluated
 - **THEN** remote sync is not allowed
+
+### Requirement: KV sync endpoint proof gate
+
+The library SHALL provide a Deno request handler shape for remote document sync that gates storage
+access behind expiry checks and caller-supplied proof verification.
+
+#### Scenario: Expired proof is rejected
+
+- **GIVEN** a remote sync request with an expired proof
+- **WHEN** the sync handler receives the request
+- **THEN** the handler rejects it before reading or writing document storage
+
+#### Scenario: Verified proof permits document update
+
+- **GIVEN** a remote sync request with an unexpired proof accepted by the verifier
+- **WHEN** the caller pushes document bytes
+- **THEN** the handler writes the document record under the document KV key

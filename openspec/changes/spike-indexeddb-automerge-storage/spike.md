@@ -2,12 +2,17 @@
 
 ## Status
 
-Worked through enough to establish the first code and spec boundary. Remaining unchecked items
-require browser/hardware or server endpoint follow-up.
+The local storage spike now has a browser-facing repo factory that wires `@automerge/automerge-repo`
+to `IndexedDBStorageAdapter`.
 
-## Evidence
+## Proven
 
-- Deno package scaffold and unit tests exist in `src/` and `tests/`.
-- Current checks run with `deno task check`.
-- Research sources included Automerge Repo package docs/search results, MDN WebAuthn extension docs,
-  W3C PRF explainer, and browser-support notes around PRF/hmac-secret.
+- The Automerge IndexedDB package is importable through Deno npm compatibility.
+- The public library can expose a small `createBrowserAutomergeRepo()` factory without forcing app
+  code to know adapter internals.
+- Deno type checks validate the import and public API shape.
+
+## Remaining
+
+- Real IndexedDB persistence still needs browser automation or a browser app fixture. Deno type
+  checks are not enough because IndexedDB behavior is runtime/browser-specific.

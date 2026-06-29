@@ -5,6 +5,8 @@
   "exports": {
     ".": "./src/index.ts",
     "./auth": "./src/auth/mod.ts",
+    "./crypto": "./src/crypto/mod.ts",
+    "./kv": "./src/kv/mod.ts",
     "./storage": "./src/storage/mod.ts",
     "./sync": "./src/sync/mod.ts"
   },
@@ -15,8 +17,8 @@
     "@automerge/automerge-repo-storage-indexeddb": "npm:@automerge/automerge-repo-storage-indexeddb@^2.5.5"
   },
   "tasks": {
-    "check": "deno fmt --check && deno lint && deno test --allow-read --allow-net",
-    "test": "deno test --allow-read --allow-net",
+    "check": "deno fmt --check && deno lint && deno test --allow-read --allow-net --allow-env",
+    "test": "deno test --allow-read --allow-net --allow-env",
     "fmt": "deno fmt",
     "lint": "deno lint"
   },

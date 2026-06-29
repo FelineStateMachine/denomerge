@@ -2,12 +2,19 @@
 
 ## Status
 
-Worked through enough to establish the first code and spec boundary. Remaining unchecked items
-require browser/hardware or server endpoint follow-up.
+The remote sync shape now has code: a Deno `Request -> Response` handler, a Deno-KV-like storage
+boundary, an in-memory KV test double, and tests for push/pull plus proof rejection.
 
-## Evidence
+## Proven
 
-- Deno package scaffold and unit tests exist in `src/` and `tests/`.
-- Current checks run with `deno task check`.
-- Research sources included Automerge Repo package docs/search results, MDN WebAuthn extension docs,
-  W3C PRF explainer, and browser-support notes around PRF/hmac-secret.
+- Document sync records are keyed by namespace/account/document id.
+- Remote push/pull is blocked without a serialized sync proof header.
+- Expired proofs are rejected before storage access.
+- Proof verification is an injected callback so the endpoint can be tested now and replaced with
+  real WebAuthn verification later.
+
+## Remaining
+
+- Implement production WebAuthn assertion verification.
+- Decide payload chunking thresholds against real Deno KV value limits.
+- Wire this endpoint to a browser Automerge Repo client.

@@ -21,3 +21,13 @@ document data.
 - **GIVEN** a browser app using denomerge
 - **WHEN** sync is unavailable
 - **THEN** document interactions continue against local IndexedDB-backed data
+
+### Requirement: Browser Automerge repo factory
+
+The library SHALL provide a browser-facing factory that wires Automerge Repo to IndexedDB storage.
+
+#### Scenario: Caller creates browser repo
+
+- **GIVEN** a browser app using denomerge
+- **WHEN** the app creates a browser Automerge repo
+- **THEN** the repo uses IndexedDB as its storage adapter
