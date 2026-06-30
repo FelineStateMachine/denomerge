@@ -37,7 +37,7 @@ export function createWebAuthnSyncProofVerifier(
 
     const clientDataBytes = decodeBase64Url(proof.clientDataJSON)
     const authenticatorData = decodeBase64Url(proof.authenticatorData)
-    const signature = decodeBase64Url(proof.signature)
+    const signature = normalizeWebAuthnEcdsaSignature(decodeBase64Url(proof.signature))
     const clientData = parseClientData(clientDataBytes)
     if (!clientData) return false
 
@@ -126,6 +126,74 @@ export function decodeBase64Url(value: string): Uint8Array {
   const padded = value.replaceAll("-", "+").replaceAll("_", "/")
     .padEnd(Math.ceil(value.length / 4) * 4, "=")
   return Uint8Array.from(atob(padded), (char) => char.charCodeAt(0))
+}
+
+/**
+ * WebAuthn authenticators return ECDSA signatures as ASN.1 DER, while WebCrypto
+ * verifies ECDSA with the fixed-width IEEE P1363 form (`r || s`).
+ *
+ * Deno/WebCrypto-generated test signatures are already P1363, so this accepts
+ * both forms and normalizes DER signatures to the 64-byte P-256 shape.
+ */
+export function normalizeWebAuthnEcdsaSignature(signature: Uint8Array): Uint8Array {
+  if (signature.byteLength === 64) return signature
+  const parsed = parseDerEcdsaSignature(signature)
+  if (!parsed) return signature
+  return concatBytes(toFixedWidthInteger(parsed.r, 32), toFixedWidthInteger(parsed.s, 32))
+}
+
+function parseDerEcdsaSignature(
+  signature: Uint8Array,
+): { r: Uint8Array; s: Uint8Array } | undefined {
+  let offset = 0
+  if (signature[offset++] !== 0x30) return undefined
+  const sequenceLength = readDerLength(signature, offset)
+  if (!sequenceLength) return undefined
+  offset = sequenceLength.nextOffset
+  if (offset + sequenceLength.length !== signature.byteLength) return undefined
+
+  const r = readDerInteger(signature, offset)
+  if (!r) return undefined
+  offset = r.nextOffset
+  const s = readDerInteger(signature, offset)
+  if (!s) return undefined
+  if (s.nextOffset !== signature.byteLength) return undefined
+  return { r: r.value, s: s.value }
+}
+
+function readDerLength(
+  bytes: Uint8Array,
+  offset: number,
+): { length: number; nextOffset: number } | undefined {
+  if (offset >= bytes.byteLength) return undefined
+  const first = bytes[offset++]
+  if ((first & 0x80) === 0) return { length: first, nextOffset: offset }
+
+  const byteCount = first & 0x7f
+  if (byteCount === 0 || byteCount > 2 || offset + byteCount > bytes.byteLength) return undefined
+  let length = 0
+  for (let index = 0; index < byteCount; index += 1) length = (length << 8) | bytes[offset++]
+  return { length, nextOffset: offset }
+}
+
+function readDerInteger(bytes: Uint8Array, offset: number):
+  | { value: Uint8Array; nextOffset: number }
+  | undefined {
+  if (bytes[offset++] !== 0x02) return undefined
+  const length = readDerLength(bytes, offset)
+  if (!length) return undefined
+  offset = length.nextOffset
+  if (length.length < 1 || offset + length.length > bytes.byteLength) return undefined
+  return { value: bytes.slice(offset, offset + length.length), nextOffset: offset + length.length }
+}
+
+function toFixedWidthInteger(bytes: Uint8Array, width: number): Uint8Array {
+  let value = bytes
+  while (value.byteLength > 0 && value[0] === 0) value = value.slice(1)
+  if (value.byteLength > width) throw new Error("ECDSA integer is wider than expected")
+  const out = new Uint8Array(width)
+  out.set(value, width - value.byteLength)
+  return out
 }
 
 function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {

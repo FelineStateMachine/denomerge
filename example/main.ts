@@ -12,6 +12,7 @@ import {
   createWebAuthnSyncProofVerifier,
   denomergeKvKeys,
   encodeBase64Url,
+  normalizeWebAuthnEcdsaSignature,
   sha256,
   utf8,
 } from "../src/index.ts"
@@ -209,7 +210,7 @@ async function handleVerifyPrf(req: Request): Promise<Response> {
   // Verify signature
   const clientDataBytes = decodeBase64Url(body.clientDataJSON)
   const authenticatorDataBytes = decodeBase64Url(body.authenticatorData)
-  const signatureBytes = decodeBase64Url(body.signature)
+  const signatureBytes = normalizeWebAuthnEcdsaSignature(decodeBase64Url(body.signature))
 
   // Import the stored SPKI key
   const publicKey = await crypto.subtle.importKey(

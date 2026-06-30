@@ -103,9 +103,10 @@ Deno.test("WebAuthn sync proof verifier checks challenge, origin, RP hash, UV, a
       ) as ArrayBuffer,
     ),
   )
+  const webAuthnDerSignature = encodeDerEcdsaSignature(signature)
   const signedProof: SyncAuthProof = {
     ...proof,
-    signature: encodeBase64Url(signature),
+    signature: encodeBase64Url(webAuthnDerSignature),
     clientDataJSON: encodeBase64Url(clientDataJSON),
     authenticatorData: encodeBase64Url(authenticatorData),
   }
@@ -149,3 +150,17 @@ Deno.test("WebAuthn sync proof verifier checks challenge, origin, RP hash, UV, a
     false,
   )
 })
+
+function encodeDerEcdsaSignature(signature: Uint8Array): Uint8Array {
+  const r = encodeDerInteger(signature.slice(0, 32))
+  const s = encodeDerInteger(signature.slice(32, 64))
+  const length = r.byteLength + s.byteLength
+  return concatBytes(new Uint8Array([0x30, length]), r, s)
+}
+
+function encodeDerInteger(value: Uint8Array): Uint8Array {
+  let normalized = value
+  while (normalized.byteLength > 1 && normalized[0] === 0) normalized = normalized.slice(1)
+  if ((normalized[0] & 0x80) !== 0) normalized = concatBytes(new Uint8Array([0]), normalized)
+  return concatBytes(new Uint8Array([0x02, normalized.byteLength]), normalized)
+}
