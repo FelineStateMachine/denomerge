@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>denomerge todo</title>
+    <link rel="stylesheet" href="/style.css" />
+  </head>
+  <body>
+    <header>
+      <h1>denomerge todos</h1>
+      <div id="userId" class="user-id">Account: …</div>
+      <div id="status" class="status">Loading…</div>
+      <div class="auth-buttons">
+        <button id="register">register passkey</button>
+        <button id="login">authenticate</button>
+        <button id="logout" style="display: none">logout</button>
+      </div>
+    </header>
+
+    <main>
+      <section class="add-todo">
+        <input id="newTodo" type="text" placeholder="what needs doing?" autocomplete="off" />
+        <button id="addBtn">add</button>
+      </section>
+      <ul id="todos"></ul>
+    </main>
+
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>
