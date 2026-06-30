@@ -31,3 +31,14 @@ The library SHALL provide a browser-facing factory that wires Automerge Repo to 
 - **GIVEN** a browser app using denomerge
 - **WHEN** the app creates a browser Automerge repo
 - **THEN** the repo uses IndexedDB as its storage adapter
+
+### Requirement: Mockable browser storage wiring
+
+The library SHALL allow browser storage wiring to be exercised with an injected storage adapter or
+adapter factory so automated tests do not require a local IndexedDB runtime.
+
+#### Scenario: Test injects storage adapter
+
+- **GIVEN** a mocked Automerge storage adapter
+- **WHEN** the caller creates a browser Automerge repo with the injected adapter
+- **THEN** the factory constructs a repo without opening real IndexedDB storage

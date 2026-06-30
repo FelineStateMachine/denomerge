@@ -2,19 +2,21 @@
 
 ## Status
 
-The remote sync shape now has code: a Deno `Request -> Response` handler, a Deno-KV-like storage
-boundary, an in-memory KV test double, and tests for push/pull plus proof rejection.
+Complete locally. The Deno KV handler remains storage-agnostic, and the verifier path now includes
+real WebAuthn assertion checks against stored credential public keys instead of only a
+caller-provided mock.
 
 ## Proven
 
-- Document sync records are keyed by namespace/account/document id.
-- Remote push/pull is blocked without a serialized sync proof header.
-- Expired proofs are rejected before storage access.
-- Proof verification is an injected callback so the endpoint can be tested now and replaced with
-  real WebAuthn verification later.
+- KV tuple keys are stable for account, credential, document, clock, chunk, and session records.
+- Sync policy blocks remote sync when key presence is false or the session is expired.
+- The KV request handler rejects missing, expired, or invalid proof before document access.
+- The WebAuthn verifier checks client data type/origin/challenge, authenticator RP hash, user
+  presence/user verification flags, and signature validity.
+- Tests cover accepted signed proof and rejected wrong-challenge proof using generated WebCrypto
+  keys.
 
 ## Remaining
 
-- Implement production WebAuthn assertion verification.
-- Decide payload chunking thresholds against real Deno KV value limits.
-- Wire this endpoint to a browser Automerge Repo client.
+- The verifier currently accepts stored SPKI public keys. Credential-registration persistence still
+  needs to decide whether to store SPKI directly or convert WebAuthn COSE keys at registration time.

@@ -49,3 +49,21 @@ access behind expiry checks and caller-supplied proof verification.
 - **GIVEN** a remote sync request with an unexpired proof accepted by the verifier
 - **WHEN** the caller pushes document bytes
 - **THEN** the handler writes the document record under the document KV key
+
+### Requirement: WebAuthn sync proof verifier
+
+The library SHALL provide a verifier that checks WebAuthn assertion proof against stored credential
+public keys before a Deno KV sync handler accepts document access.
+
+#### Scenario: Signed WebAuthn proof is accepted
+
+- **GIVEN** a stored credential public key, expected RP id, expected origin, and expected challenge
+- **WHEN** the verifier receives a proof with matching client data, authenticator RP hash, user
+  presence/user verification flags, and a valid signature
+- **THEN** proof verification succeeds
+
+#### Scenario: Wrong challenge is rejected
+
+- **GIVEN** a signed proof whose client challenge does not match the expected challenge
+- **WHEN** the verifier checks the proof
+- **THEN** proof verification fails

@@ -6,4 +6,5 @@
 - [x] Add sync policy helper for key-present/not-expired gating.
 - [x] Add unit tests for key stability and sync gating.
 - [x] Implement a Deno KV sync endpoint contract with a pluggable proof verifier.
-- [ ] Follow-up: replace the verifier mock with production WebAuthn assertion verification.
+- [x] Replace the verifier mock with a WebAuthn assertion verifier for stored credential public
+      keys.

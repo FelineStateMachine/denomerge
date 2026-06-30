@@ -20,3 +20,15 @@ Each POC spike phase SHALL state what evidence is required before advancing to t
 - **GIVEN** a spike phase has implementation tasks
 - **WHEN** the phase is reviewed
 - **THEN** its tasks and spike notes identify proven behavior and remaining follow-up work
+
+### Requirement: Combined POC path selection
+
+The phase map SHALL record the selected combined POC path after the individual spikes produce enough
+evidence to proceed without a major architecture fork.
+
+#### Scenario: Spikes are complete
+
+- **GIVEN** the package boundary, PRF auth, IndexedDB storage, and KV sync spikes are complete
+- **WHEN** the phase map is reviewed
+- **THEN** it identifies the selected browser-first Deno library flow
+- **AND** it calls out any implementation decision that remains unresolved

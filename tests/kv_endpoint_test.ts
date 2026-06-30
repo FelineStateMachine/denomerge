@@ -1,5 +1,14 @@
 import { assertEquals } from "@std/assert"
-import { createKvSyncHandler, MemoryKv, type SyncAuthProof } from "../src/index.ts"
+import {
+  concatBytes,
+  createKvSyncHandler,
+  createWebAuthnSyncProofVerifier,
+  encodeBase64Url,
+  MemoryKv,
+  sha256,
+  type SyncAuthProof,
+  utf8,
+} from "../src/index.ts"
 
 const proof: SyncAuthProof = {
   credentialId: "cred",
@@ -62,4 +71,78 @@ Deno.test("KV sync handler rejects failed proof verification", async () => {
   )
   assertEquals(response.status, 403)
   assertEquals(await response.json(), { error: "invalid_sync_proof" })
+})
+
+Deno.test("WebAuthn sync proof verifier checks challenge, origin, RP hash, UV, and signature", async () => {
+  const keyPair = await crypto.subtle.generateKey(
+    { name: "ECDSA", namedCurve: "P-256" },
+    true,
+    ["sign", "verify"],
+  )
+  const publicKeySpki = new Uint8Array(await crypto.subtle.exportKey("spki", keyPair.publicKey))
+  const clientDataJSON = utf8(JSON.stringify({
+    type: "webauthn.get",
+    challenge: "challenge",
+    origin: "https://example.com",
+  }))
+  const authenticatorData = concatBytes(
+    await sha256(utf8("example.com")),
+    new Uint8Array([0x05, 0, 0, 0, 1]),
+  )
+  const signatureBase = concatBytes(authenticatorData, await sha256(clientDataJSON))
+  const signature = new Uint8Array(
+    await crypto.subtle.sign(
+      { name: "ECDSA", hash: "SHA-256" },
+      keyPair.privateKey,
+      signatureBase.buffer.slice(
+        signatureBase.byteOffset,
+        signatureBase.byteOffset + signatureBase.byteLength,
+      ) as ArrayBuffer,
+    ),
+  )
+  const signedProof: SyncAuthProof = {
+    ...proof,
+    signature: encodeBase64Url(signature),
+    clientDataJSON: encodeBase64Url(clientDataJSON),
+    authenticatorData: encodeBase64Url(authenticatorData),
+  }
+  const verifier = createWebAuthnSyncProofVerifier({
+    rpId: "example.com",
+    origin: "https://example.com",
+    expectedChallenge: () => "challenge",
+    getCredential: () => ({
+      credentialId: "cred",
+      publicKeySpkiBase64Url: encodeBase64Url(publicKeySpki),
+      algorithm: { name: "ECDSA", namedCurve: "P-256", hash: "SHA-256" },
+    }),
+  })
+
+  assertEquals(
+    await verifier(signedProof, {
+      namespace: "app",
+      accountId: "acct",
+      documentId: "doc1",
+      method: "PUT",
+    }),
+    true,
+  )
+  const wrongChallengeVerifier = createWebAuthnSyncProofVerifier({
+    rpId: "example.com",
+    origin: "https://example.com",
+    expectedChallenge: () => "other",
+    getCredential: () => ({
+      credentialId: "cred",
+      publicKeySpkiBase64Url: encodeBase64Url(publicKeySpki),
+      algorithm: { name: "ECDSA", namedCurve: "P-256", hash: "SHA-256" },
+    }),
+  })
+  assertEquals(
+    await wrongChallengeVerifier(signedProof, {
+      namespace: "app",
+      accountId: "acct",
+      documentId: "doc1",
+      method: "PUT",
+    }),
+    false,
+  )
 })

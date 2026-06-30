@@ -2,17 +2,19 @@
 
 ## Status
 
-The local storage spike now has a browser-facing repo factory that wires `@automerge/automerge-repo`
-to `IndexedDBStorageAdapter`.
+Complete locally with browser storage mocked. The library exposes a browser Automerge Repo factory,
+a config helper, and injection points so IndexedDB adapter wiring can be tested without a real
+browser IndexedDB session.
 
 ## Proven
 
-- The Automerge IndexedDB package is importable through Deno npm compatibility.
-- The public library can expose a small `createBrowserAutomergeRepo()` factory without forcing app
-  code to know adapter internals.
-- Deno type checks validate the import and public API shape.
+- `createBrowserAutomergeRepoConfig` selects an IndexedDB storage adapter through an injectable
+  factory.
+- `createBrowserAutomergeRepo` accepts a mocked storage adapter and constructs an Automerge `Repo`.
+- The local document store boundary remains independent from Automerge internals.
+- Automated storage tests cover the adapter wiring without writing IndexedDB data on this machine.
 
 ## Remaining
 
-- Real IndexedDB persistence still needs browser automation or a browser app fixture. Deno type
-  checks are not enough because IndexedDB behavior is runtime/browser-specific.
+- Real browser IndexedDB durability still needs browser runtime validation outside this headless
+  Deno environment.
