@@ -145,31 +145,36 @@ async function registerResidentKey() {
     ? b64urlEncode(new Uint8Array(cred.response.attestationObject))
     : null
 
-  // Extract public key from attestation object (CBOR encoded)
+  // Extract public key as SPKI. Modern browsers expose this directly; parsing
+  // the CBOR attestation object is only a fallback for older environments.
   let publicKeySpki = null
+  if (typeof cred.response.getPublicKey === "function") {
+    const publicKey = cred.response.getPublicKey()
+    if (publicKey) publicKeySpki = b64urlEncode(new Uint8Array(publicKey))
+  }
   if (attestationObject) {
     try {
-      publicKeySpki = extractSpkiFromAttestation(b64urlDecode(attestationObject))
+      publicKeySpki ??= extractSpkiFromAttestation(b64urlDecode(attestationObject))
     } catch (e) {
       console.warn("Could not extract SPKI from attestation:", e)
     }
   }
+
+  if (!publicKeySpki) throw new Error("Could not extract credential public key")
 
   // Store credential ID
   credentialId = rawId
   localStorage.setItem("denomerge-cred-id", credentialId)
 
   // Register with server
-  if (publicKeySpki) {
-    await api("/auth/register", {
-      method: "POST",
-      body: JSON.stringify({
-        accountId,
-        credentialId: rawId,
-        attestationData: { clientDataJSON, authenticatorData, publicKey: publicKeySpki },
-      }),
-    })
-  }
+  await api("/auth/register", {
+    method: "POST",
+    body: JSON.stringify({
+      accountId,
+      credentialId: rawId,
+      attestationData: { clientDataJSON, authenticatorData, publicKey: publicKeySpki },
+    }),
+  })
 
   setStatus("Registered! Now authenticate to start syncing.")
   $userId.textContent = `Account: ${accountId.slice(0, 8)}…`
@@ -293,19 +298,7 @@ async function syncTodosToServer(items) {
   const payload = {
     bytesBase64: b64urlEncode(new TextEncoder().encode(JSON.stringify({ todos: items }))),
   }
-  const proof = {
-    credentialId,
-    challenge: b64urlEncode(await sha256(new TextEncoder().encode("sync-" + Date.now()))),
-    signature: b64urlEncode(new Uint8Array(64)), // placeholder - real impl uses proper assertion
-    clientDataJSON: b64urlEncode(
-      new TextEncoder().encode(
-        JSON.stringify({ type: "webauthn.get", origin: ORIGIN, challenge: "sync-placeholder" }),
-      ),
-    ),
-    authenticatorData: b64urlEncode(new Uint8Array(37).fill(0)),
-    prfSaltHash: b64urlEncode(await sha256(prfSalt ?? new Uint8Array(32))),
-    expiresAt: sessionExpiresAt.toISOString(),
-  }
+  const proof = await buildSyncProof()
 
   const res = await fetch(`${ORIGIN}/sync/${NAMESPACE}/${accountId}/${documentId}`, {
     method: "PUT",
@@ -324,21 +317,8 @@ async function syncTodosToServer(items) {
 async function loadAndRenderTodos() {
   if (!sessionId || !sessionExpiresAt || sessionExpiresAt < new Date()) return
 
-  const proof = {
-    credentialId,
-    challenge: b64urlEncode(await sha256(new TextEncoder().encode("sync-" + Date.now()))),
-    signature: b64urlEncode(new Uint8Array(64)),
-    clientDataJSON: b64urlEncode(
-      new TextEncoder().encode(
-        JSON.stringify({ type: "webauthn.get", origin: ORIGIN, challenge: "sync-placeholder" }),
-      ),
-    ),
-    authenticatorData: b64urlEncode(new Uint8Array(37).fill(0)),
-    prfSaltHash: b64urlEncode(await sha256(prfSalt ?? new Uint8Array(32))),
-    expiresAt: sessionExpiresAt.toISOString(),
-  }
-
   try {
+    const proof = await buildSyncProof()
     const res = await fetch(`${ORIGIN}/sync/${NAMESPACE}/${accountId}/${documentId}`, {
       headers: { "x-denomerge-sync-proof": JSON.stringify(proof) },
     })
@@ -358,6 +338,35 @@ async function loadAndRenderTodos() {
 
   todos = loadLocalTodos()
   renderTodos(todos)
+}
+
+async function buildSyncProof() {
+  if (!credentialId || !sessionExpiresAt || !prfSalt) {
+    throw new Error("No active sync session")
+  }
+
+  const challengeBytes = crypto.getRandomValues(new Uint8Array(32))
+  const challenge = b64urlEncode(challengeBytes)
+  const assertion = await navigator.credentials.get({
+    publicKey: {
+      challenge: challengeBytes,
+      rpId: self.location.hostname,
+      allowCredentials: [{ type: "public-key", id: b64urlDecode(credentialId) }],
+      userVerification: "required",
+      extensions: { prf: { eval: { first: prfSalt } } },
+    },
+  })
+  if (!assertion) throw new Error("No assertion returned")
+
+  return {
+    credentialId,
+    challenge,
+    signature: b64urlEncode(new Uint8Array(assertion.response.signature)),
+    clientDataJSON: b64urlEncode(new Uint8Array(assertion.response.clientDataJSON)),
+    authenticatorData: b64urlEncode(new Uint8Array(assertion.response.authenticatorData)),
+    prfSaltHash: b64urlEncode(await sha256(prfSalt)),
+    expiresAt: sessionExpiresAt.toISOString(),
+  }
 }
 
 function renderTodos(items) {

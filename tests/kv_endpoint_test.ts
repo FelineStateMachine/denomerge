@@ -25,7 +25,10 @@ Deno.test("KV sync handler stores and returns document payloads behind proof ver
   const handler = createKvSyncHandler({
     kv,
     now: () => new Date("2026-01-01T00:00:00Z"),
-    verifyProof: (_proof, context) => context.namespace === "app",
+    verifyProof: (_proof, context) =>
+      context.namespace === "app" &&
+      context.requestOrigin === "http://local" &&
+      context.requestRpId === "local",
   })
   const headers = { "x-denomerge-sync-proof": JSON.stringify(proof) }
 

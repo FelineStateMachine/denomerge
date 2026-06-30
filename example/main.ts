@@ -64,8 +64,9 @@ async function storeCredential(
 // ---------------------------------------------------------------------------
 
 const verifySyncProof: VerifySyncProof = createWebAuthnSyncProofVerifier({
-  rpId: Deno.env.get("DENOMERGE_RP_ID") ?? "localhost",
-  origin: Deno.env.get("DENOMERGE_ORIGIN") ?? "http://localhost:8000",
+  rpId: (context) => Deno.env.get("DENOMERGE_RP_ID") ?? context.requestRpId ?? "localhost",
+  origin: (context) =>
+    Deno.env.get("DENOMERGE_ORIGIN") ?? context.requestOrigin ?? "http://localhost:8000",
   getCredential: getStoredCredential,
 })
 
@@ -130,7 +131,7 @@ async function handleRegister(req: Request): Promise<Response> {
 
   // Basic validation: verify origin in clientDataJSON
   const clientData = JSON.parse(new TextDecoder().decode(clientDataBytes)) as { origin?: string }
-  const expectedOrigin = Deno.env.get("DENOMERGE_ORIGIN") ?? "http://localhost:8000"
+  const expectedOrigin = Deno.env.get("DENOMERGE_ORIGIN") ?? new URL(req.url).origin
   if (clientData.origin !== expectedOrigin) {
     return json({ error: "origin mismatch" }, 400)
   }
@@ -140,10 +141,10 @@ async function handleRegister(req: Request): Promise<Response> {
   if (!authData) return json({ error: "invalid authenticator data" }, 400)
   const authRpId = Deno.env.get("DENOMERGE_RP_ID") ?? new URL(expectedOrigin).hostname
   const expectedRpIdHashFromHost = await sha256(utf8(authRpId))
-  let rpIdMatch = false
+  let rpIdMatch = true
   for (let i = 0; i < 32; i++) {
     if (authData.rpIdHash[i] !== expectedRpIdHashFromHost[i]) {
-      rpIdMatch = true
+      rpIdMatch = false
       break
     }
   }
@@ -169,8 +170,8 @@ function handleGetChallenge(req: Request): Response {
 
   return json({
     challenge,
-    rpId: Deno.env.get("DENOMERGE_RP_ID") ?? "localhost",
-    origin: Deno.env.get("DENOMERGE_ORIGIN") ?? "http://localhost:8000",
+    rpId: Deno.env.get("DENOMERGE_RP_ID") ?? url.hostname,
+    origin: Deno.env.get("DENOMERGE_ORIGIN") ?? url.origin,
   })
 }
 

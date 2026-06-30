@@ -13,13 +13,15 @@ Mostly complete. Local server verified working.
 - `POST /auth/register` with missing fields → 400 `{ "error": "missing fields" }`
 - `GET /sync/ns/acct/doc` without proof → 401 `{ "error": "missing_sync_proof" }`
 - `PUT /sync/ns/acct/doc` without proof → 401 `{ "error": "missing_sync_proof" }`
-- `POST /auth/verify-prf` without active challenge → 400 `{ "error": "challenge expired or missing" }`
+- `POST /auth/verify-prf` without active challenge → 400
+  `{ "error": "challenge expired or missing" }`
 - All `deno.json` deps resolve correctly (npm packages downloaded on first run).
 - `example/deno.json` now includes all library JSR + npm dependencies.
 
 ### Pending (needs Dami's Deno Deploy token)
 
-- **Tunnel test**: `DENO_DEPLOY_TOKEN=*** deno run --tunnel --unstable-kv --allow-net --allow-env --allow-read --allow-write example/main.ts`
+- **Tunnel test**:
+  `DENO_DEPLOY_TOKEN=*** deno run --tunnel --unstable-kv --allow-net --allow-env --allow-read --allow-write example/main.ts`
 - **Deploy test**: trigger a new deploy from Deno Deploy dashboard (picks up new commits).
 - **End-to-end**: real browser → register passkey → add todos → sync to cloud KV → reload.
 

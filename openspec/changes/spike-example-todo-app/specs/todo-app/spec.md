@@ -2,7 +2,8 @@
 
 ### Requirement: Example app serves HTTP on configured port
 
-The example server SHALL start and listen on the port configured via the `PORT` environment variable or default to 8000.
+The example server SHALL start and listen on the port configured via the `PORT` environment variable
+or default to 8000.
 
 #### Scenario: Server starts on configured port
 
@@ -35,7 +36,8 @@ The example server SHALL serve `index.html`, `style.css`, and `app.js` from the 
 
 ### Requirement: Auth challenge endpoint issues a challenge
 
-The example server SHALL expose a `GET /auth/challenge?accountId=:accountId` endpoint that returns a challenge, rpId, and origin.
+The example server SHALL expose a `GET /auth/challenge?accountId=:accountId` endpoint that returns a
+challenge, rpId, and origin.
 
 #### Scenario: Challenge endpoint returns challenge data
 
@@ -45,7 +47,8 @@ The example server SHALL expose a `GET /auth/challenge?accountId=:accountId` end
 
 ### Requirement: Auth register endpoint stores credential in KV
 
-The example server SHALL expose a `POST /auth/register` endpoint that accepts a credential ID and attestation data and stores the credential public key in Deno KV.
+The example server SHALL expose a `POST /auth/register` endpoint that accepts a credential ID and
+attestation data and stores the credential public key in Deno KV.
 
 #### Scenario: Registration stores SPKI in KV
 
@@ -56,7 +59,8 @@ The example server SHALL expose a `POST /auth/register` endpoint that accepts a 
 
 ### Requirement: KV sync handler stores and retrieves documents
 
-The example server SHALL expose a sync handler at `/sync/:namespace/:accountId/:documentId` that stores and retrieves document payloads behind proof verification.
+The example server SHALL expose a sync handler at `/sync/:namespace/:accountId/:documentId` that
+stores and retrieves document payloads behind proof verification.
 
 #### Scenario: PUT stores document with valid proof
 
@@ -68,7 +72,8 @@ The example server SHALL expose a sync handler at `/sync/:namespace/:accountId/:
 #### Scenario: GET retrieves stored document
 
 - **GIVEN** a stored document exists in Deno KV for `doc1`
-- **WHEN** a GET request is made to `/sync/denomerge-example/acct/doc1` with a valid sync proof header
+- **WHEN** a GET request is made to `/sync/denomerge-example/acct/doc1` with a valid sync proof
+  header
 - **THEN** it returns the stored document bytes with status 200
 
 #### Scenario: Request without proof header is rejected

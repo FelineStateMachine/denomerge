@@ -30,5 +30,14 @@
     "rules": {
       "tags": ["recommended"]
     }
+  },
+  "deploy": {
+    "org": "felinestatemachine",
+    "app": "test-todo",
+    "runtime": {
+      "type": "dynamic",
+      "entrypoint": "./example/main.ts",
+      "cwd": "./example"
+    }
   }
 }

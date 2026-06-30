@@ -26,6 +26,8 @@ export interface SyncRequestContext {
   accountId: string
   documentId: string
   method: "GET" | "PUT" | "DELETE"
+  requestOrigin?: string
+  requestRpId?: string
 }
 
 export interface CreateKvSyncHandlerOptions {
@@ -48,7 +50,14 @@ export function createKvSyncHandler(options: CreateKvSyncHandlerOptions): KvSync
     }
 
     const [, namespace, accountId, documentId] = match.map(decodeURIComponent)
-    const context: SyncRequestContext = { namespace, accountId, documentId, method }
+    const context: SyncRequestContext = {
+      namespace,
+      accountId,
+      documentId,
+      method,
+      requestOrigin: url.origin,
+      requestRpId: url.hostname,
+    }
     const proof = readProof(request)
     if (!proof) return json({ error: "missing_sync_proof" }, 401)
 

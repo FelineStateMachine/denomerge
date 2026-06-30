@@ -13,8 +13,8 @@ export type WebAuthnPublicKeyAlgorithm =
   | { name: "RSASSA-PKCS1-v1_5"; hash: "SHA-256" }
 
 export interface CreateWebAuthnSyncProofVerifierOptions {
-  rpId: string
-  origin: string
+  rpId: string | ((context: SyncRequestContext) => string | Promise<string>)
+  origin: string | ((context: SyncRequestContext) => string | Promise<string>)
   getCredential: (
     credentialId: string,
     context: SyncRequestContext,
@@ -42,9 +42,16 @@ export function createWebAuthnSyncProofVerifier(
     if (!clientData) return false
 
     if (clientData.type !== "webauthn.get") return false
-    if (clientData.origin !== options.origin) return false
+    if (clientData.origin !== (await resolveExpected(options.origin, context))) return false
     if (clientData.challenge !== (await expectedChallenge(options, proof, context))) return false
-    if (!(await authenticatorDataMatches(authenticatorData, options.rpId))) return false
+    if (
+      !(await authenticatorDataMatches(
+        authenticatorData,
+        await resolveExpected(options.rpId, context),
+      ))
+    ) {
+      return false
+    }
     if (!hasUserPresenceAndVerification(authenticatorData)) return false
 
     const publicKey = await crypto.subtle.importKey(
@@ -61,6 +68,13 @@ export function createWebAuthnSyncProofVerifier(
       toArrayBuffer(concatBytes(authenticatorData, await sha256(clientDataBytes))),
     )
   }
+}
+
+async function resolveExpected(
+  expected: string | ((context: SyncRequestContext) => string | Promise<string>),
+  context: SyncRequestContext,
+): Promise<string> {
+  return typeof expected === "function" ? await expected(context) : expected
 }
 
 async function expectedChallenge(
