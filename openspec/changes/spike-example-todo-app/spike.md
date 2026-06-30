@@ -18,11 +18,17 @@ Mostly complete. Local server verified working.
 - All `deno.json` deps resolve correctly (npm packages downloaded on first run).
 - `example/deno.json` now includes all library JSR + npm dependencies.
 
-### Pending (needs Dami's Deno Deploy token)
+### Verified after Deno Deploy trace follow-up ✓
 
-- **Tunnel test**:
-  `DENO_DEPLOY_TOKEN=*** deno run --tunnel --unstable-kv --allow-net --allow-env --allow-read --allow-write example/main.ts`
-- **Deploy test**: trigger a new deploy from Deno Deploy dashboard (picks up new commits).
+- Production deploy routed: `0nwasmvcapxv`.
+- Production URL responds: `https://test-todo.felinestatemachine.deno.net`.
+- Preview URL responds: `https://test-todo-0nwasmvcapxv.felinestatemachine.deno.net`.
+- Challenge endpoint now returns request-derived RP ID and origin on Deploy.
+- WebAuthn ECDSA signatures are normalized from authenticator DER format to WebCrypto P1363 format
+  before verification.
+
+### Pending (requires real browser + physical authenticator)
+
 - **End-to-end**: real browser → register passkey → add todos → sync to cloud KV → reload.
 
 ## Exit criteria status
