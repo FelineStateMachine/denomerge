@@ -26,12 +26,33 @@ const mergedImports = {
   ...absolutize(exampleConfig.imports ?? {}, exampleBase),
 }
 
+
 await Deno.mkdir(resolve(import.meta.dirname!, "dist"), { recursive: true })
 const importMapPath = resolve(import.meta.dirname!, "dist/.build-importmap.json")
 await Deno.writeTextFile(importMapPath, JSON.stringify({ imports: mergedImports }))
 
+// esbuild platform:"browser" picks @automerge/automerge's "bundler" WASM entrypoint,
+// which requires native WASM ES module bundling (webpack/Vite only — not esbuild).
+// This plugin intercepts those imports before deno-resolver and redirects to the
+// base64 entrypoint (WASM inlined as a string) and the slim entrypoint.
+const automergeEntryDir = resolve(
+  import.meta.dirname!,
+  "node_modules/.deno/@automerge+automerge@3.2.6/node_modules/@automerge/automerge/dist/mjs/entrypoints",
+)
+const automergeWasmPlugin: esbuild.Plugin = {
+  name: "automerge-base64-wasm",
+  setup(build) {
+    build.onResolve({ filter: /^@automerge\/automerge$/ }, () => ({
+      path: resolve(automergeEntryDir, "fullfat_base64.js"),
+    }))
+    build.onResolve({ filter: /^@automerge\/automerge\/slim$/ }, () => ({
+      path: resolve(automergeEntryDir, "slim.js"),
+    }))
+  },
+}
+
 const result = await esbuild.build({
-  plugins: [...denoPlugins({ importMapURL: new URL(`file://${importMapPath}`).href })],
+  plugins: [automergeWasmPlugin, ...denoPlugins({ importMapURL: new URL(`file://${importMapPath}`).href })],
   entryPoints: ["./app.ts"],
   bundle: true,
   outdir: "./dist",
@@ -42,7 +63,7 @@ const result = await esbuild.build({
   platform: "browser",
   target: "es2022",
   conditions: ["browser"],
-  loader: { ".wasm": "file" },
+  loader: { ".wasm": "empty" },
   logLevel: "info",
 })
 
