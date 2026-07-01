@@ -10,6 +10,8 @@
  *   a WebAuthn round-trip on every request.
  */
 
+import { configure, getLevelFilter, getStreamSink } from "@logtape/logtape"
+import { getPrettyFormatter } from "@logtape/pretty"
 import {
   createKvSyncHandler,
   createLogger,
@@ -26,10 +28,29 @@ import {
 } from "../src/index.ts"
 
 // ---------------------------------------------------------------------------
-// Database
+// Logging — configure before first use
 // ---------------------------------------------------------------------------
 
-const log = createLogger("test-todo", { level: "debug" })
+await configure({
+  sinks: {
+    pretty: getStreamSink(Deno.stderr.writable, { formatter: getPrettyFormatter() }),
+  },
+  filters: {
+    "debug+": getLevelFilter("debug"),
+    "warning+": getLevelFilter("warning"),
+  },
+  loggers: [
+    { category: ["test-todo"], sinks: ["pretty"], filters: ["debug+"] },
+    { category: ["logtape", "meta"], sinks: ["pretty"], filters: ["warning+"] },
+  ],
+  reset: true,
+})
+
+const log = createLogger("test-todo")
+
+// ---------------------------------------------------------------------------
+// Database
+// ---------------------------------------------------------------------------
 
 const kv = await Deno.openKv()
 const SYNC_NAMESPACE = "test-todo"
@@ -70,8 +91,6 @@ async function storeCredential(
 // WebAuthn assertion verifier
 // ---------------------------------------------------------------------------
 
-// Verifies a full WebAuthn assertion: origin, RP ID hash, flags, and ECDSA signature.
-// Used in handleVerifyPrf to authenticate the login ceremony.
 const webAuthnVerifier = createWebAuthnSyncProofVerifier({
   rpId: (context) =>
     Deno.env.get("DENOMERGE_RP_ID") ?? context.requestRpId ?? "localhost",
@@ -85,8 +104,6 @@ const webAuthnVerifier = createWebAuthnSyncProofVerifier({
 // Sync proof verifier (session-based)
 // ---------------------------------------------------------------------------
 
-// Session-based sync proof: the sessionId issued at login authorises sync for its lifetime,
-// avoiding a WebAuthn round-trip (and passkey prompt) on every sync operation.
 const verifySyncProof: VerifySyncProof = async (proof, context) => {
   const { sessionId } = proof as unknown as { sessionId?: string }
   if (!sessionId) return false
@@ -128,10 +145,7 @@ function getChallenge(accountId: string): string | undefined {
 
 function parseAuthenticatorData(bytes: Uint8Array): { rpIdHash: Uint8Array; flags: number } | null {
   if (bytes.byteLength < 37) return null
-  return {
-    rpIdHash: bytes.slice(0, 32),
-    flags: bytes[32],
-  }
+  return { rpIdHash: bytes.slice(0, 32), flags: bytes[32] }
 }
 
 // ---------------------------------------------------------------------------
@@ -147,7 +161,7 @@ async function handleRegister(req: Request): Promise<Response> {
   }
 
   if (!body.accountId || !body.credentialId || !body.attestationData) {
-    log.warn("register: missing fields", { accountId: body.accountId })
+    log.warn("register: missing fields for {accountId}", { accountId: body.accountId })
     return json({ error: "missing fields" }, 400)
   }
 
@@ -158,7 +172,10 @@ async function handleRegister(req: Request): Promise<Response> {
   const clientData = JSON.parse(new TextDecoder().decode(clientDataBytes)) as { origin?: string }
   const expectedOrigin = Deno.env.get("DENOMERGE_ORIGIN") ?? new URL(req.url).origin
   if (clientData.origin !== expectedOrigin) {
-    log.warn("register: origin mismatch", { got: clientData.origin, expected: expectedOrigin })
+    log.warn("register: origin mismatch — got {got}, expected {expected}", {
+      got: clientData.origin,
+      expected: expectedOrigin,
+    })
     return json({ error: "origin mismatch" }, 400)
   }
 
@@ -171,12 +188,15 @@ async function handleRegister(req: Request): Promise<Response> {
     if (authData.rpIdHash[i] !== expectedRpIdHash[i]) { rpIdMatch = false; break }
   }
   if (!rpIdMatch) {
-    log.warn("register: rpId mismatch", { accountId: body.accountId })
+    log.warn("register: rpId hash mismatch for {accountId}", { accountId: body.accountId })
     return json({ error: "rpId mismatch" }, 400)
   }
 
   await storeCredential(body.credentialId, body.accountId, publicKeySpki)
-  log.info("register: credential stored", { accountId: body.accountId, credentialId: body.credentialId })
+  log.info("register: credential stored for {accountId}", {
+    accountId: body.accountId,
+    credentialId: body.credentialId,
+  })
   return json({ ok: true })
 }
 
@@ -203,7 +223,6 @@ function handleGetChallenge(req: Request): Response {
 
 // ---------------------------------------------------------------------------
 // Route: POST /auth/verify-prf
-// Verify the WebAuthn assertion and issue a short-lived sync session.
 // ---------------------------------------------------------------------------
 
 async function handleVerifyPrf(req: Request): Promise<Response> {
@@ -243,7 +262,7 @@ async function handleVerifyPrf(req: Request): Promise<Response> {
   }
 
   if (!(await webAuthnVerifier(proof, context))) {
-    log.warn("verify-prf: signature invalid", { accountId: body.accountId })
+    log.warn("verify-prf: signature invalid for {accountId}", { accountId: body.accountId })
     return json({ error: "signature verification failed" }, 403)
   }
 
@@ -251,7 +270,10 @@ async function handleVerifyPrf(req: Request): Promise<Response> {
   const expiresAt = new Date(Date.now() + 5 * 60 * 1000).toISOString()
   const keys = denomergeKvKeys({ namespace: SYNC_NAMESPACE, accountId: body.accountId })
   await kv.set(keys.syncSession(sessionId), { accountId: body.accountId, expiresAt })
-  log.info("verify-prf: session issued", { accountId: body.accountId, expiresAt })
+  log.info("verify-prf: session issued for {accountId} until {expiresAt}", {
+    accountId: body.accountId,
+    expiresAt,
+  })
 
   challenges.delete(body.accountId)
 
@@ -270,17 +292,15 @@ const STATIC_FILES = new Map<string, string>([
 
 async function serveStatic(req: Request): Promise<Response> {
   const url = new URL(req.url)
-  const pathname = url.pathname
-  const fileName = STATIC_FILES.get(pathname) ?? STATIC_FILES.get(pathname + "/") ??
+  const fileName = STATIC_FILES.get(url.pathname) ?? STATIC_FILES.get(url.pathname + "/") ??
     STATIC_FILES.get("/")
 
   if (!fileName) return json({ error: "not_found" }, 404)
 
-  const filePath = `./${fileName}`
   try {
-    const stat = await Deno.stat(filePath)
+    const stat = await Deno.stat(`./${fileName}`)
     if (!stat.isFile) return json({ error: "not_found" }, 404)
-    const body = await Deno.readFile(filePath)
+    const body = await Deno.readFile(`./${fileName}`)
     const contentType = fileName.endsWith(".css")
       ? "text/css"
       : fileName.endsWith(".js")
@@ -298,12 +318,10 @@ async function serveStatic(req: Request): Promise<Response> {
 
 function handler(req: Request): Response | Promise<Response> {
   const url = new URL(req.url)
-
   if (url.pathname === "/auth/register" && req.method === "POST") return handleRegister(req)
   if (url.pathname === "/auth/challenge" && req.method === "GET") return handleGetChallenge(req)
   if (url.pathname === "/auth/verify-prf" && req.method === "POST") return handleVerifyPrf(req)
   if (url.pathname.startsWith("/sync/")) return syncHandler(req)
-
   return serveStatic(req)
 }
 
@@ -327,5 +345,5 @@ function methodNotAllowed(): Response {
 // ---------------------------------------------------------------------------
 
 const port = Number(Deno.env.get("PORT") ?? 8000)
-log.info("server starting", { port })
+log.info("server starting on port {port}", { port })
 Deno.serve({ port }, handler)

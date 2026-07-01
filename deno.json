@@ -15,7 +15,9 @@
     "@std/encoding": "jsr:@std/encoding@^1.0.10",
     "@automerge/automerge": "npm:@automerge/automerge@^3.2.6",
     "@automerge/automerge-repo": "npm:@automerge/automerge-repo@^2.5.5",
-    "@automerge/automerge-repo-storage-indexeddb": "npm:@automerge/automerge-repo-storage-indexeddb@^2.5.5"
+    "@automerge/automerge-repo-storage-indexeddb": "npm:@automerge/automerge-repo-storage-indexeddb@^2.5.5",
+    "@logtape/logtape": "jsr:@logtape/logtape@^2.2.1",
+    "@logtape/pretty": "jsr:@logtape/pretty@^2.2.1"
   },
   "tasks": {
     "check": "deno fmt --check && deno lint && deno test --allow-read --allow-net --allow-env",

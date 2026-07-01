@@ -1,3 +1,4 @@
+import { configure, getConsoleSink, getLevelFilter } from "@logtape/logtape";
 import {
   buildPrfAuthenticationOptions,
   clone,
@@ -19,7 +20,20 @@ import {
   type PublicKeyCredentialWithPrf,
 } from "@felinestatemachine/denomerge";
 
-const log = createLogger("test-todo", { level: "debug" });
+await configure({
+  sinks: { console: getConsoleSink() },
+  filters: {
+    "debug+": getLevelFilter("debug"),
+    "warning+": getLevelFilter("warning"),
+  },
+  loggers: [
+    { category: ["test-todo"], sinks: ["console"], filters: ["debug+"] },
+    { category: ["logtape", "meta"], sinks: ["console"], filters: ["warning+"] },
+  ],
+  reset: true,
+});
+
+const log = createLogger("test-todo");
 
 // ---------------------------------------------------------------------------
 // Types
@@ -78,10 +92,10 @@ async function initDoc(): Promise<void> {
     try {
       handle = repo.find<TodoDoc>(storedUrl as AutomergeUrl);
       await handle.whenReady();
-      log.debug("doc loaded from storage", { url: storedUrl });
+      log.debug("doc loaded from storage: {url}", { url: storedUrl });
       return;
     } catch (e) {
-      log.warn("stored doc URL not found, creating fresh", {
+      log.warn("stored doc URL not found ({url}): {err}", {
         url: storedUrl,
         err: String(e),
       });
@@ -91,7 +105,7 @@ async function initDoc(): Promise<void> {
   handle = repo.create<TodoDoc>({ todos: [] });
   localStorage.setItem(KEYS.docUrl, handle.url);
   await handle.whenReady();
-  log.debug("new doc created", { url: handle.url });
+  log.debug("new doc created: {url}", { url: handle.url });
 }
 
 function getTodos(): Todo[] {
@@ -178,7 +192,7 @@ async function register(): Promise<void> {
 
   credentialId = encodeBase64Url(new Uint8Array(cred.rawId));
   localStorage.setItem(KEYS.credId, credentialId);
-  log.info("registered", { accountId, credentialId });
+  log.info("registered credential {credentialId}", { accountId, credentialId });
 }
 
 // ---------------------------------------------------------------------------
@@ -220,7 +234,7 @@ async function login(): Promise<void> {
   if (!credentialId) {
     credentialId = encodeBase64Url(new Uint8Array(assertion.rawId));
     localStorage.setItem(KEYS.credId, credentialId);
-    log.info("credential discovered", { credentialId });
+    log.info("credential discovered: {credentialId}", { credentialId });
   }
 
   const saltHash = encodeBase64Url(await sha256(salt));
@@ -252,7 +266,7 @@ async function login(): Promise<void> {
   sessionExpiresAt = new Date(expiresAt);
   localStorage.setItem(KEYS.session, sessionId);
   localStorage.setItem(KEYS.sessionExpires, sessionExpiresAt.toISOString());
-  log.info("session issued", { accountId, expiresAt });
+  log.info("session issued until {expiresAt}", { accountId, expiresAt });
 }
 
 // ---------------------------------------------------------------------------
@@ -295,7 +309,7 @@ async function push(): Promise<void> {
   })
     .then((r) => {
       if (r.status === 401) handleSessionExpiry();
-      else if (!r.ok) log.warn("push failed", { status: r.status });
+      else if (!r.ok) log.warn("push failed: HTTP {status}", { status: r.status });
       else log.debug("push ok");
     })
     .catch((e) => log.error("push error", { err: String(e) }));
@@ -323,7 +337,7 @@ async function pull(): Promise<void> {
     const merged = merge(clone(localDoc), remoteDoc);
     const incoming = getChanges(localDoc, merged);
     if (incoming.length > 0) {
-      log.debug("pull: applying remote changes", { count: incoming.length });
+      log.debug("pull: applying {count} remote changes", { count: incoming.length });
       const mergedTodos = [...merged.todos];
       handle.change((d) => {
         d.todos.splice(0, d.todos.length, ...mergedTodos);
@@ -448,7 +462,7 @@ async function init(): Promise<void> {
     if (expires > new Date()) {
       sessionId = storedSession;
       sessionExpiresAt = expires;
-      log.info("session restored", { expiresAt: expires.toISOString() });
+      log.info("session restored, expires {expiresAt}", { expiresAt: expires.toISOString() });
       showLoggedIn();
       setStatus(`Session active until ${expires.toLocaleTimeString()}`);
       await pull();
