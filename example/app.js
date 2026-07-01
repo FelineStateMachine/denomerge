@@ -285,7 +285,7 @@ let _db = null
 async function getDb() {
   if (_db) return _db
   _db = await new Promise((resolve, reject) => {
-    const req = indexedDB.open("denomerge-example", 1)
+    const req = indexedDB.open("test-todo", 1)
     req.onupgradeneeded = (e) => e.target.result.createObjectStore("docs")
     req.onsuccess = (e) => resolve(e.target.result)
     req.onerror = (e) => reject(e.target.error)
