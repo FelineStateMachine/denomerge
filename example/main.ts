@@ -10,7 +10,7 @@
  *   a WebAuthn round-trip on every request.
  */
 
-import { configure, getLevelFilter, getStreamSink } from "@logtape/logtape"
+import { configure, getConsoleSink, getLevelFilter, getStreamSink, type Sink } from "@logtape/logtape"
 import { getPrettyFormatter } from "@logtape/pretty"
 import {
   createKvSyncHandler,
@@ -30,18 +30,30 @@ import {
 // ---------------------------------------------------------------------------
 // Logging — configure before first use
 // ---------------------------------------------------------------------------
+// Deno Deploy captures console.* calls in the log viewer; raw stream writes
+// with ANSI codes appear garbled there. Locally, the pretty sink gives nice
+// colored output. To add an OTEL sink later, append it to `activeSinks` and
+// add a matching entry in `sinks`.
+
+const isDeploy = !!Deno.env.get("DENO_DEPLOYMENT_ID")
+
+const sinks: Record<string, Sink> = {
+  console: getConsoleSink(),
+  pretty: getStreamSink(Deno.stderr.writable, { formatter: getPrettyFormatter() }),
+}
+
+// Deploy: console only (clean viewer output). Local: pretty to stderr (colored).
+const activeSinks = isDeploy ? ["console"] : ["pretty"]
 
 await configure({
-  sinks: {
-    pretty: getStreamSink(Deno.stderr.writable, { formatter: getPrettyFormatter() }),
-  },
+  sinks,
   filters: {
     "debug+": getLevelFilter("debug"),
     "warning+": getLevelFilter("warning"),
   },
   loggers: [
-    { category: ["test-todo"], sinks: ["pretty"], filters: ["debug+"] },
-    { category: ["logtape", "meta"], sinks: ["pretty"], filters: ["warning+"] },
+    { category: ["test-todo"], sinks: activeSinks, filters: ["debug+"] },
+    { category: ["logtape", "meta"], sinks: activeSinks, filters: ["warning+"] },
   ],
   reset: true,
 })
