@@ -15,12 +15,10 @@ Captured 2026-07-01. Deployment: `test-todo.felinestatemachine.deno.net`.
 
 The key is the `documentId` constant (`"todo-doc-1"`). The value is the full in-memory todo array serialised directly by the browser's structured clone algorithm — no JSON encoding at rest.
 
-**Observed state (screenshot):**
+**Observed state:**
 ```
-"todo-doc-1" → [
-  { id: 1782875816561, text: "foo", done: false },
-  { id: 1782875820336, text: "bar", done: false }
-]
+Key          | Value
+"todo-doc-1" | [{done: false, id: 1782875816561, text: "foo"}, {done: false, id: 1782875820336, text: "bar"}]
 ```
 
 **Gap vs intended design:** This is raw JSON, not an Automerge CRDT document. A production integration would store an Automerge binary document here (via `AutomergeIndexedDbStorageAdapter`), enabling offline conflict resolution before syncing.
