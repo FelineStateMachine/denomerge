@@ -162,11 +162,7 @@ async function registerResidentKey() {
 
   if (!publicKeySpki) throw new Error("Could not extract credential public key")
 
-  // Store credential ID
-  credentialId = rawId
-  localStorage.setItem("denomerge-cred-id", credentialId)
-
-  // Register with server
+  // Register with server — store credential ID only after server confirms
   await api("/auth/register", {
     method: "POST",
     body: JSON.stringify({
@@ -175,6 +171,9 @@ async function registerResidentKey() {
       attestationData: { clientDataJSON, authenticatorData, publicKey: publicKeySpki },
     }),
   })
+
+  credentialId = rawId
+  localStorage.setItem("denomerge-cred-id", credentialId)
 
   setStatus("Registered! Now authenticate to start syncing.")
   $userId.textContent = `Account: ${accountId.slice(0, 8)}…`

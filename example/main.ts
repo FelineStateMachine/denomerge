@@ -121,8 +121,9 @@ async function handleRegister(req: Request): Promise<Response> {
     attestationData: { clientDataJSON: string; authenticatorData: string; publicKey: string }
   }
 
+  console.log("[register] body keys:", Object.keys(body), "credentialId:", !!body.credentialId, "attestationData:", !!body.attestationData)
   if (!body.accountId || !body.credentialId || !body.attestationData) {
-    return json({ error: "missing fields" }, 400)
+    return json({ error: "missing fields", received: Object.keys(body) }, 400)
   }
 
   // Decode attestation data
@@ -133,6 +134,7 @@ async function handleRegister(req: Request): Promise<Response> {
   // Basic validation: verify origin in clientDataJSON
   const clientData = JSON.parse(new TextDecoder().decode(clientDataBytes)) as { origin?: string }
   const expectedOrigin = Deno.env.get("DENOMERGE_ORIGIN") ?? new URL(req.url).origin
+  console.log("[register] clientData.origin:", clientData.origin, "expectedOrigin:", expectedOrigin)
   if (clientData.origin !== expectedOrigin) {
     return json({ error: "origin mismatch" }, 400)
   }
@@ -149,6 +151,7 @@ async function handleRegister(req: Request): Promise<Response> {
       break
     }
   }
+  console.log("[register] rpId:", authRpId, "match:", rpIdMatch)
   if (!rpIdMatch) return json({ error: "rpId mismatch" }, 400)
 
   await storeCredential(body.credentialId, body.accountId, publicKeySpki)

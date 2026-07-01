@@ -30,9 +30,5 @@
     "rules": {
       "tags": ["recommended"]
     }
-  },
-  "deploy": {
-    "org": "felinestatemachine",
-    "app": "test-todo"
   }
 }
