@@ -22,7 +22,7 @@ Deno Deploy server (main.ts)
 ## Sync proof flow
 
 1. **Registration**: Browser creates a resident credential. Server stores its SPKI in Deno KV under
-   `["denomerge", "denomerge-example", accountId, "credential", credentialIdHash]`.
+   `["denomerge", "test-todo", accountId, "credential", credentialIdHash]`.
 
 2. **Login**: Browser authenticates with the credential, includes PRF salt, gets a short-lived sync
    session token in return.
@@ -60,9 +60,9 @@ interface SyncSession {
 ## KV keyspace
 
 ```
-["denomerge", "denomerge-example", accountId, "credential", credentialIdHash] → StoredCredential
-["denomerge", "denomerge-example", accountId, "doc", documentId]           → { bytesBase64, updatedAt }
-["denomerge", "denomerge-example", accountId, "sync-session", sessionId]    → SyncSession
+["denomerge", "test-todo", accountId, "credential", credentialIdHash] → StoredCredential
+["denomerge", "test-todo", accountId, "doc", documentId]           → { bytesBase64, updatedAt }
+["denomerge", "test-todo", accountId, "sync-session", sessionId]    → SyncSession
 ```
 
 ## Local development

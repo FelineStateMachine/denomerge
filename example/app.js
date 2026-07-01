@@ -27,7 +27,7 @@ const $addBtn = document.getElementById("addBtn")
 // ---------------------------------------------------------------------------
 
 const ORIGIN = self.location.origin
-const NAMESPACE = "denomerge-example"
+const NAMESPACE = "test-todo"
 const ACCOUNT_ID = localStorage.getItem("denomerge-account") || crypto.randomUUID()
 localStorage.setItem("denomerge-account", ACCOUNT_ID)
 

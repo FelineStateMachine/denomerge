@@ -1,5 +1,5 @@
 {
-  "name": "@felinestatemachine/denomerge-example",
+  "name": "@felinestatemachine/test-todo",
   "version": "0.1.0",
   "type": "module",
   "exports": {

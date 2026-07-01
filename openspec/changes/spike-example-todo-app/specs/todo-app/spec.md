@@ -64,7 +64,7 @@ stores and retrieves document payloads behind proof verification.
 
 #### Scenario: PUT stores document with valid proof
 
-- **GIVEN** a PUT request to `/sync/denomerge-example/acct/doc1` with a valid sync proof header
+- **GIVEN** a PUT request to `/sync/test-todo/acct/doc1` with a valid sync proof header
 - **WHEN** the server receives the request
 - **THEN** it stores the document payload in Deno KV
 - **AND** it returns the stored record with status 201
@@ -72,7 +72,7 @@ stores and retrieves document payloads behind proof verification.
 #### Scenario: GET retrieves stored document
 
 - **GIVEN** a stored document exists in Deno KV for `doc1`
-- **WHEN** a GET request is made to `/sync/denomerge-example/acct/doc1` with a valid sync proof
+- **WHEN** a GET request is made to `/sync/test-todo/acct/doc1` with a valid sync proof
   header
 - **THEN** it returns the stored document bytes with status 200
 

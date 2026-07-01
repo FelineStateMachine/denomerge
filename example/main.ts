@@ -24,7 +24,7 @@ import type { SyncRequestContext } from "../src/sync/kv_endpoint.ts"
 // ---------------------------------------------------------------------------
 
 const kv = await Deno.openKv()
-const SYNC_NAMESPACE = "denomerge-example"
+const SYNC_NAMESPACE = "test-todo"
 
 // ---------------------------------------------------------------------------
 // Credential storage (KV-based)

@@ -27,7 +27,7 @@ Key          | Value
 
 ## Server — Deno KV
 
-**Namespace constant:** `"denomerge-example"` (set in `example/main.ts`)
+**Namespace constant:** `"test-todo"` (set in `example/main.ts`)
 
 All keys follow the prefix pattern defined in `src/kv/keys.ts`:
 
@@ -39,7 +39,7 @@ All keys follow the prefix pattern defined in `src/kv/keys.ts`:
 
 #### 1. Credential
 ```
-["denomerge", "denomerge-example", <accountId>, "credential", <credentialId>]
+["denomerge", "test-todo", <accountId>, "credential", <credentialId>]
 ```
 Stored on registration. Holds the passkey public key used to verify assertions.
 
@@ -53,7 +53,7 @@ Stored on registration. Holds the passkey public key used to verify assertions.
 
 #### 2. Sync session
 ```
-["denomerge", "denomerge-example", <accountId>, "sync-session", <sessionId>]
+["denomerge", "test-todo", <accountId>, "sync-session", <sessionId>]
 ```
 Issued by `POST /auth/verify-prf` after successful WebAuthn + PRF login. TTL: 5 minutes (enforced by the client's `expiresAt` in the sync proof; no server-side KV TTL set).
 
@@ -66,7 +66,7 @@ Issued by `POST /auth/verify-prf` after successful WebAuthn + PRF login. TTL: 5 
 
 #### 3. Sync document
 ```
-["denomerge", "denomerge-example", <accountId>, "doc", "todo-doc-1"]
+["denomerge", "test-todo", <accountId>, "doc", "todo-doc-1"]
 ```
 Written on every `PUT /sync/...` and read on `GET /sync/...`. Single record per (account, document).
 
@@ -100,7 +100,7 @@ The `bytesBase64` decodes to:
  IndexedDB write          ← structured clone of todo array
       │
       ▼
- PUT /sync/denomerge-example/<accountId>/todo-doc-1
+ PUT /sync/test-todo/<accountId>/todo-doc-1
    header: x-denomerge-sync-proof: { sessionId, expiresAt }
    body:   { bytesBase64: b64url(JSON({ todos: [...] })) }
       │
@@ -108,7 +108,7 @@ The `bytesBase64` decodes to:
  Server verifies sessionId against KV sync-session record
       │
       ▼
- KV write: ["denomerge", "denomerge-example", <accountId>, "doc", "todo-doc-1"]
+ KV write: ["denomerge", "test-todo", <accountId>, "doc", "todo-doc-1"]
            { bytesBase64, updatedAt }
 ```
 
