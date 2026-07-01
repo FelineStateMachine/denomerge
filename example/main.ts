@@ -140,6 +140,7 @@ async function handleRegister(req: Request): Promise<Response> {
   }
 
   // Verify authenticator data RP ID hash matches
+  console.log("[register] authenticatorDataBytes.byteLength:", authenticatorDataBytes.byteLength, "raw authenticatorData field:", body.attestationData.authenticatorData?.slice(0, 40))
   const authData = parseAuthenticatorData(authenticatorDataBytes)
   if (!authData) return json({ error: "invalid authenticator data" }, 400)
   const authRpId = Deno.env.get("DENOMERGE_RP_ID") ?? new URL(expectedOrigin).hostname
