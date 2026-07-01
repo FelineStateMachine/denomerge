@@ -10,6 +10,7 @@
 
 import {
   createKvSyncHandler,
+  createLogger,
   denomergeKvKeys,
   encodeBase64Url,
   normalizeWebAuthnEcdsaSignature,
@@ -22,6 +23,8 @@ import type { SyncRequestContext } from "../src/sync/kv_endpoint.ts"
 // ---------------------------------------------------------------------------
 // Database
 // ---------------------------------------------------------------------------
+
+const log = createLogger("test-todo", { level: "debug" })
 
 const kv = await Deno.openKv()
 const SYNC_NAMESPACE = "test-todo"
@@ -127,6 +130,7 @@ async function handleRegister(req: Request): Promise<Response> {
   }
 
   if (!body.accountId || !body.credentialId || !body.attestationData) {
+    log.warn("register: missing fields", { accountId: body.accountId })
     return json({ error: "missing fields" }, 400)
   }
 
@@ -139,6 +143,7 @@ async function handleRegister(req: Request): Promise<Response> {
   const clientData = JSON.parse(new TextDecoder().decode(clientDataBytes)) as { origin?: string }
   const expectedOrigin = Deno.env.get("DENOMERGE_ORIGIN") ?? new URL(req.url).origin
   if (clientData.origin !== expectedOrigin) {
+    log.warn("register: origin mismatch", { got: clientData.origin, expected: expectedOrigin })
     return json({ error: "origin mismatch" }, 400)
   }
 
@@ -154,9 +159,13 @@ async function handleRegister(req: Request): Promise<Response> {
       break
     }
   }
-  if (!rpIdMatch) return json({ error: "rpId mismatch" }, 400)
+  if (!rpIdMatch) {
+    log.warn("register: rpId mismatch", { accountId: body.accountId })
+    return json({ error: "rpId mismatch" }, 400)
+  }
 
   await storeCredential(body.credentialId, body.accountId, publicKeySpki)
+  log.info("register: credential stored", { accountId: body.accountId, credentialId: body.credentialId })
   return json({ ok: true })
 }
 
@@ -235,13 +244,17 @@ async function handleVerifyPrf(req: Request): Promise<Response> {
     signedData.buffer,
   )
 
-  if (!valid) return json({ error: "signature verification failed" }, 403)
+  if (!valid) {
+    log.warn("verify-prf: signature invalid", { accountId: body.accountId })
+    return json({ error: "signature verification failed" }, 403)
+  }
 
   // Issue sync session: store a short-lived session token in KV
   const sessionId = encodeBase64Url(crypto.getRandomValues(new Uint8Array(16)))
   const expiresAt = new Date(Date.now() + 5 * 60 * 1000).toISOString() // 5 minutes
   const keys = denomergeKvKeys({ namespace: SYNC_NAMESPACE, accountId: body.accountId })
   await kv.set(keys.syncSession(sessionId), { accountId: body.accountId, expiresAt })
+  log.info("verify-prf: session issued", { accountId: body.accountId, expiresAt })
 
   challenges.delete(body.accountId)
 
@@ -351,5 +364,5 @@ function decodeBase64Url(value: string): Uint8Array {
 // ---------------------------------------------------------------------------
 
 const port = Number(Deno.env.get("PORT") ?? 8000)
-console.log(`denomerge example server listening on :${port}`)
+log.info("server starting", { port })
 Deno.serve({ port }, handler)

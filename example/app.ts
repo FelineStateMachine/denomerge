@@ -1,6 +1,7 @@
 import {
   clone,
   createBrowserAutomergeRepo,
+  createLogger,
   getChanges,
   isValidAutomergeUrl,
   load,
@@ -9,6 +10,8 @@ import {
   type AutomergeUrl,
   type DocHandle,
 } from "@felinestatemachine/denomerge"
+
+const log = createLogger("test-todo", { level: "debug" })
 
 // ---------------------------------------------------------------------------
 // Types
@@ -61,15 +64,17 @@ async function initDoc(): Promise<void> {
     try {
       handle = repo.find<TodoDoc>(storedUrl as AutomergeUrl)
       await handle.whenReady()
+      log.debug("doc loaded from storage", { url: storedUrl })
       return
-    } catch {
-      // Doc not in local storage (e.g. after DB rename) — fall through to create
+    } catch (e) {
+      log.warn("stored doc URL not found, creating fresh", { url: storedUrl, err: String(e) })
       localStorage.removeItem(KEYS.docUrl)
     }
   }
   handle = repo.create<TodoDoc>({ todos: [] })
   localStorage.setItem(KEYS.docUrl, handle.url)
   await handle.whenReady()
+  log.debug("new doc created", { url: handle.url })
 }
 
 function getTodos(): Todo[] {
@@ -175,6 +180,7 @@ async function register(): Promise<void> {
 
   credentialId = b64urlEncode(cred.rawId)
   localStorage.setItem(KEYS.credId, credentialId)
+  log.info("registered", { accountId, credentialId })
 }
 
 // ---------------------------------------------------------------------------
@@ -227,6 +233,7 @@ async function login(): Promise<void> {
   sessionExpiresAt = new Date(expiresAt)
   localStorage.setItem(KEYS.session, sessionId)
   localStorage.setItem(KEYS.sessionExpires, sessionExpiresAt.toISOString())
+  log.info("session issued", { accountId, expiresAt })
 }
 
 // ---------------------------------------------------------------------------
@@ -246,7 +253,10 @@ async function push(): Promise<void> {
     method: "PUT",
     headers: { "Content-Type": "application/json", "x-denomerge-sync-proof": syncProof() },
     body: JSON.stringify({ bytesBase64: b64urlEncode(save(doc)) }),
-  }).catch((e) => console.warn("[sync] push failed:", e))
+  }).then((r) => {
+    if (!r.ok) log.warn("push failed", { status: r.status })
+    else log.debug("push ok")
+  }).catch((e) => log.error("push error", { err: String(e) }))
 }
 
 async function pull(): Promise<void> {
@@ -262,14 +272,18 @@ async function pull(): Promise<void> {
     const remoteDoc = load<TodoDoc>(b64urlDecode(bytesBase64))
     const localDoc = handle.docSync()!
     const merged = merge(clone(localDoc), remoteDoc)
-    if (getChanges(localDoc, merged).length > 0) {
+    const incoming = getChanges(localDoc, merged)
+    if (incoming.length > 0) {
+      log.debug("pull: applying remote changes", { count: incoming.length })
       const mergedTodos = [...merged.todos]
       handle.change((d) => {
         d.todos.splice(0, d.todos.length, ...mergedTodos)
       })
+    } else {
+      log.debug("pull: already up to date")
     }
   } catch (e) {
-    console.warn("[sync] pull failed:", e)
+    log.error("pull failed", { err: String(e) })
   }
 }
 
@@ -365,6 +379,7 @@ $newTodo.addEventListener("keydown", async (e) => {
 // ---------------------------------------------------------------------------
 
 async function init(): Promise<void> {
+  log.debug("init")
   await initDoc()
 
   const storedSession = localStorage.getItem(KEYS.session)
@@ -375,6 +390,7 @@ async function init(): Promise<void> {
     if (expires > new Date()) {
       sessionId = storedSession
       sessionExpiresAt = expires
+      log.info("session restored", { expiresAt: expires.toISOString() })
       showLoggedIn()
       setStatus(`Session active until ${expires.toLocaleTimeString()}`)
       await pull()
@@ -387,6 +403,7 @@ async function init(): Promise<void> {
   showLoggedOut()
   setStatus(credentialId ? "Log in to sync." : "Register a passkey to get started.")
   renderTodos(getTodos())
+  log.debug("ready", { hasCredential: !!credentialId })
 }
 
 init()
