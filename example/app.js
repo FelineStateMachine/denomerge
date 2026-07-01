@@ -276,20 +276,40 @@ function extractSpkiFromAttestation(_attestationObjectBytes) {
 }
 
 // ---------------------------------------------------------------------------
-// Todo storage (localStorage + server sync via fetch)
-// For this POC we use localStorage as the "IndexedDB" stand-in since the full
-// Automerge integration requires a build step. The sync protocol is real.
+// Todo storage (IndexedDB + server sync via fetch)
 // ---------------------------------------------------------------------------
 
 let todos = []
 
-function loadLocalTodos() {
-  const stored = localStorage.getItem(`denomerge-todos-${documentId}`)
-  return stored ? JSON.parse(stored) : []
+let _db = null
+async function getDb() {
+  if (_db) return _db
+  _db = await new Promise((resolve, reject) => {
+    const req = indexedDB.open("denomerge-example", 1)
+    req.onupgradeneeded = (e) => e.target.result.createObjectStore("docs")
+    req.onsuccess = (e) => resolve(e.target.result)
+    req.onerror = (e) => reject(e.target.error)
+  })
+  return _db
 }
 
-function saveLocalTodos(items) {
-  localStorage.setItem(`denomerge-todos-${documentId}`, JSON.stringify(items))
+async function loadLocalTodos() {
+  const db = await getDb()
+  return new Promise((resolve) => {
+    const req = db.transaction("docs", "readonly").objectStore("docs").get(documentId)
+    req.onsuccess = (e) => resolve(e.target.result ?? [])
+    req.onerror = () => resolve([])
+  })
+}
+
+async function saveLocalTodos(items) {
+  const db = await getDb()
+  await new Promise((resolve, reject) => {
+    const tx = db.transaction("docs", "readwrite")
+    tx.objectStore("docs").put(items, documentId)
+    tx.oncomplete = resolve
+    tx.onerror = (e) => reject(e.target.error)
+  })
   renderTodos(items)
 }
 
@@ -340,7 +360,7 @@ async function loadAndRenderTodos() {
     console.warn("Failed to load from server:", e)
   }
 
-  todos = loadLocalTodos()
+  todos = await loadLocalTodos()
   renderTodos(todos)
 }
 
@@ -380,21 +400,21 @@ function setStatus(msg) {
 async function addTodo(text) {
   if (!text.trim()) return
   todos.push({ text: text.trim(), done: false, id: Date.now() })
-  saveLocalTodos(todos)
+  await saveLocalTodos(todos)
   await syncTodosToServer(todos)
 }
 
 async function toggleTodo(index) {
   if (todos[index]) {
     todos[index].done = !todos[index].done
-    saveLocalTodos(todos)
+    await saveLocalTodos(todos)
     await syncTodosToServer(todos)
   }
 }
 
 async function deleteTodo(index) {
   todos.splice(index, 1)
-  saveLocalTodos(todos)
+  await saveLocalTodos(todos)
   await syncTodosToServer(todos)
 }
 
@@ -446,7 +466,7 @@ $newTodo.addEventListener("keydown", async (e) => {
 })
 
 // Restore session from localStorage
-function init() {
+async function init() {
   const storedSession = localStorage.getItem("denomerge-sync-session")
   const storedExpires = localStorage.getItem("denomerge-sync-expires")
 
@@ -454,14 +474,12 @@ function init() {
     sessionId = storedSession
     sessionExpiresAt = new Date(storedExpires)
     if (sessionExpiresAt > new Date()) {
-      // Session still valid - re-derive PRF salt would be needed for real sync
-      // For POC, just show logged-in state
       setStatus(`Session active until ${sessionExpiresAt.toLocaleTimeString()}`)
       $userId.textContent = `Account: ${accountId.slice(0, 8)}…`
       $logout.style.display = "inline-block"
       $login.style.display = "none"
       $register.style.display = "none"
-      todos = loadLocalTodos()
+      todos = await loadLocalTodos()
       renderTodos(todos)
       return
     }
@@ -470,7 +488,7 @@ function init() {
   // New session - show register/login options
   $userId.textContent = `Account: ${accountId.slice(0, 8)}…`
   setStatus("Please register or log in to start syncing.")
-  todos = loadLocalTodos()
+  todos = await loadLocalTodos()
   renderTodos(todos)
 }
 

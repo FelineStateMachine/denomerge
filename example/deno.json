@@ -12,6 +12,7 @@
     "@automerge/automerge-repo": "npm:@automerge/automerge-repo@^2.5.5",
     "@automerge/automerge-repo-storage-indexeddb": "npm:@automerge/automerge-repo-storage-indexeddb@^2.5.5"
   },
+  "nodeModulesDir": "auto",
   "tasks": {
     "start": "deno run --unstable-kv --allow-net --allow-env --allow-read --allow-write main.ts",
     "dev": "deno run --unstable-kv --allow-net --allow-env --allow-read --allow-write --watch main.ts"
