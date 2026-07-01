@@ -57,7 +57,9 @@ let prfSalt: Uint8Array | null = null
 interface Todo { id: number; text: string; done: boolean }
 interface TodoDoc { todos: Todo[] }
 
-const repo = createBrowserAutomergeRepo({ databaseName: "test-todo" })
+// Use a distinct DB name from the old plain-IndexedDB storage ("test-todo")
+// so IndexedDBStorageAdapter can create its own schema without conflict.
+const repo = createBrowserAutomergeRepo({ databaseName: "test-todo-repo" })
 let handle: DocHandle<TodoDoc>
 
 async function initDoc(): Promise<Todo[]> {
@@ -73,7 +75,7 @@ async function initDoc(): Promise<Todo[]> {
 }
 
 function getTodos(): Todo[] {
-  return [...(handle.docSync()?.todos ?? [])]
+  return [...(handle.doc()?.todos ?? [])]
 }
 
 // ---------------------------------------------------------------------------
@@ -241,7 +243,7 @@ function buildSyncProof() {
 
 async function pushToServer(): Promise<void> {
   if (!sessionId || !sessionExpiresAt || sessionExpiresAt < new Date()) return
-  const doc = handle.docSync()
+  const doc = handle.doc()
   if (!doc) return
   const bytes = save(doc)
   const res = await fetch(`${ORIGIN}/sync/${NAMESPACE}/${accountId}/${DOCUMENT_ID}`, {
@@ -263,7 +265,7 @@ async function loadAndRenderTodos(): Promise<void> {
       const data = await res.json() as { bytesBase64?: string }
       if (data.bytesBase64) {
         const remoteDoc = load<TodoDoc>(b64urlDecode(data.bytesBase64))
-        const localDoc = handle.docSync()!
+        const localDoc = handle.doc()!
         // CRDT merge: bring in remote changes that local doesn't have
         const merged = merge(clone(localDoc), remoteDoc)
         const incoming = getChanges(localDoc, merged)
