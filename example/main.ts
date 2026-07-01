@@ -4,12 +4,12 @@
  *
  * Sync proof verification:
  * - On registration, the credential public key (SPKI) is stored in Deno KV.
- * - On sync, the WebAuthn assertion signature is verified against the stored key.
+ * - On login (verify-prf), a short-lived session token is issued and stored in KV.
+ * - On sync, the session token is verified against KV (no per-sync WebAuthn round-trip).
  */
 
 import {
   createKvSyncHandler,
-  createWebAuthnSyncProofVerifier,
   denomergeKvKeys,
   encodeBase64Url,
   normalizeWebAuthnEcdsaSignature,
@@ -64,12 +64,17 @@ async function storeCredential(
 // Sync proof verifier
 // ---------------------------------------------------------------------------
 
-const verifySyncProof: VerifySyncProof = createWebAuthnSyncProofVerifier({
-  rpId: (context) => Deno.env.get("DENOMERGE_RP_ID") ?? context.requestRpId ?? "localhost",
-  origin: (context) =>
-    Deno.env.get("DENOMERGE_ORIGIN") ?? context.requestOrigin ?? "http://localhost:8000",
-  getCredential: getStoredCredential,
-})
+// Session-based sync proof: the sessionId issued at login authorizes sync for its lifetime,
+// avoiding a WebAuthn round-trip (and passkey prompt) on every sync operation.
+const verifySyncProof: VerifySyncProof = async (proof, context) => {
+  const { sessionId } = proof as unknown as { sessionId?: string }
+  if (!sessionId) return false
+  const keys = denomergeKvKeys({ namespace: SYNC_NAMESPACE, accountId: context.accountId })
+  const session = await kv.get<{ accountId: string; expiresAt: string }>(
+    keys.syncSession(sessionId),
+  )
+  return session.value?.accountId === context.accountId
+}
 
 // ---------------------------------------------------------------------------
 // Sync handler

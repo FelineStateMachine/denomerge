@@ -344,33 +344,9 @@ async function loadAndRenderTodos() {
   renderTodos(todos)
 }
 
-async function buildSyncProof() {
-  if (!credentialId || !sessionExpiresAt || !prfSalt) {
-    throw new Error("No active sync session")
-  }
-
-  const challengeBytes = crypto.getRandomValues(new Uint8Array(32))
-  const challenge = b64urlEncode(challengeBytes)
-  const assertion = await navigator.credentials.get({
-    publicKey: {
-      challenge: challengeBytes,
-      rpId: self.location.hostname,
-      allowCredentials: [{ type: "public-key", id: b64urlDecode(credentialId) }],
-      userVerification: "required",
-      extensions: { prf: { eval: { first: prfSalt } } },
-    },
-  })
-  if (!assertion) throw new Error("No assertion returned")
-
-  return {
-    credentialId,
-    challenge,
-    signature: b64urlEncode(new Uint8Array(assertion.response.signature)),
-    clientDataJSON: b64urlEncode(new Uint8Array(assertion.response.clientDataJSON)),
-    authenticatorData: b64urlEncode(new Uint8Array(assertion.response.authenticatorData)),
-    prfSaltHash: b64urlEncode(await sha256(prfSalt)),
-    expiresAt: sessionExpiresAt.toISOString(),
-  }
+function buildSyncProof() {
+  if (!sessionId || !sessionExpiresAt) throw new Error("No active sync session")
+  return { sessionId, expiresAt: sessionExpiresAt.toISOString() }
 }
 
 function renderTodos(items) {
