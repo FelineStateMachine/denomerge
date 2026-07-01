@@ -140,8 +140,7 @@ async function registerResidentKey() {
 
   const rawId = cred.rawId ? b64urlEncode(cred.rawId) : b64urlEncode(new Uint8Array(cred.id))
   const clientDataJSON = b64urlEncode(new Uint8Array(cred.response.clientDataJSON))
-  // AuthenticatorAttestationResponse exposes authenticatorData via getAuthenticatorData(),
-  // not as a direct property (that exists only on AuthenticatorAssertionResponse).
+  // getAuthenticatorData() is required here; the direct property exists only on AuthenticatorAssertionResponse.
   const authenticatorDataBuffer = typeof cred.response.getAuthenticatorData === "function"
     ? cred.response.getAuthenticatorData()
     : null
