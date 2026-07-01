@@ -2,23 +2,28 @@
  * example/main.ts
  * Deno Deploy server: serves the todo app and exposes the KV sync endpoint.
  *
- * Sync proof verification:
- * - On registration, the credential public key (SPKI) is stored in Deno KV.
- * - On login (verify-prf), a short-lived session token is issued and stored in KV.
- * - On sync, the session token is verified against KV (no per-sync WebAuthn round-trip).
+ * Auth flow:
+ * - Registration: store the credential's SPKI public key in KV.
+ * - Login (verify-prf): use createWebAuthnSyncProofVerifier to check the assertion,
+ *   then issue a short-lived session token.
+ * - Sync: the session token in x-denomerge-sync-proof authorises GET/PUT without
+ *   a WebAuthn round-trip on every request.
  */
 
 import {
   createKvSyncHandler,
   createLogger,
+  createWebAuthnSyncProofVerifier,
+  decodeBase64Url,
   denomergeKvKeys,
   encodeBase64Url,
-  normalizeWebAuthnEcdsaSignature,
   sha256,
   utf8,
+  type StoredCredentialPublicKey,
+  type SyncAuthProof,
+  type SyncRequestContext,
+  type VerifySyncProof,
 } from "../src/index.ts"
-import type { VerifySyncProof } from "../src/sync/kv_endpoint.ts"
-import type { SyncRequestContext } from "../src/sync/kv_endpoint.ts"
 
 // ---------------------------------------------------------------------------
 // Database
@@ -39,17 +44,15 @@ interface StoredCredential {
   algorithm: { name: "ECDSA"; namedCurve: "P-256"; hash: "SHA-256" }
 }
 
-/** Get a stored credential by ID, scoped to namespace + account. */
 async function getStoredCredential(
   credentialId: string,
-  _context: SyncRequestContext,
+  context: SyncRequestContext,
 ): Promise<StoredCredential | undefined> {
-  const keys = denomergeKvKeys({ namespace: SYNC_NAMESPACE, accountId: _context.accountId })
+  const keys = denomergeKvKeys({ namespace: SYNC_NAMESPACE, accountId: context.accountId })
   const entry = await kv.get<StoredCredential>(keys.credential(credentialId))
   return entry.value ?? undefined
 }
 
-/** Store a registered credential public key. */
 async function storeCredential(
   credentialId: string,
   accountId: string,
@@ -64,10 +67,25 @@ async function storeCredential(
 }
 
 // ---------------------------------------------------------------------------
-// Sync proof verifier
+// WebAuthn assertion verifier
 // ---------------------------------------------------------------------------
 
-// Session-based sync proof: the sessionId issued at login authorizes sync for its lifetime,
+// Verifies a full WebAuthn assertion: origin, RP ID hash, flags, and ECDSA signature.
+// Used in handleVerifyPrf to authenticate the login ceremony.
+const webAuthnVerifier = createWebAuthnSyncProofVerifier({
+  rpId: (context) =>
+    Deno.env.get("DENOMERGE_RP_ID") ?? context.requestRpId ?? "localhost",
+  origin: (context) =>
+    Deno.env.get("DENOMERGE_ORIGIN") ?? context.requestOrigin ?? "http://localhost:8000",
+  getCredential: async (credentialId, context): Promise<StoredCredentialPublicKey | undefined> =>
+    await getStoredCredential(credentialId, context),
+})
+
+// ---------------------------------------------------------------------------
+// Sync proof verifier (session-based)
+// ---------------------------------------------------------------------------
+
+// Session-based sync proof: the sessionId issued at login authorises sync for its lifetime,
 // avoiding a WebAuthn round-trip (and passkey prompt) on every sync operation.
 const verifySyncProof: VerifySyncProof = async (proof, context) => {
   const { sessionId } = proof as unknown as { sessionId?: string }
@@ -105,7 +123,7 @@ function getChallenge(accountId: string): string | undefined {
 }
 
 // ---------------------------------------------------------------------------
-// Helper: parse authenticator data
+// Helper: parse authenticator data (registration only)
 // ---------------------------------------------------------------------------
 
 function parseAuthenticatorData(bytes: Uint8Array): { rpIdHash: Uint8Array; flags: number } | null {
@@ -118,7 +136,6 @@ function parseAuthenticatorData(bytes: Uint8Array): { rpIdHash: Uint8Array; flag
 
 // ---------------------------------------------------------------------------
 // Route: POST /auth/register
-// Register a passkey: store the credential public key from the attestation.
 // ---------------------------------------------------------------------------
 
 async function handleRegister(req: Request): Promise<Response> {
@@ -134,12 +151,10 @@ async function handleRegister(req: Request): Promise<Response> {
     return json({ error: "missing fields" }, 400)
   }
 
-  // Decode attestation data
   const clientDataBytes = decodeBase64Url(body.attestationData.clientDataJSON)
   const authenticatorDataBytes = decodeBase64Url(body.attestationData.authenticatorData)
   const publicKeySpki = decodeBase64Url(body.attestationData.publicKey)
 
-  // Basic validation: verify origin in clientDataJSON
   const clientData = JSON.parse(new TextDecoder().decode(clientDataBytes)) as { origin?: string }
   const expectedOrigin = Deno.env.get("DENOMERGE_ORIGIN") ?? new URL(req.url).origin
   if (clientData.origin !== expectedOrigin) {
@@ -147,17 +162,13 @@ async function handleRegister(req: Request): Promise<Response> {
     return json({ error: "origin mismatch" }, 400)
   }
 
-  // Verify authenticator data RP ID hash matches
   const authData = parseAuthenticatorData(authenticatorDataBytes)
   if (!authData) return json({ error: "invalid authenticator data" }, 400)
   const authRpId = Deno.env.get("DENOMERGE_RP_ID") ?? new URL(expectedOrigin).hostname
-  const expectedRpIdHashFromHost = await sha256(utf8(authRpId))
+  const expectedRpIdHash = await sha256(utf8(authRpId))
   let rpIdMatch = true
   for (let i = 0; i < 32; i++) {
-    if (authData.rpIdHash[i] !== expectedRpIdHashFromHost[i]) {
-      rpIdMatch = false
-      break
-    }
+    if (authData.rpIdHash[i] !== expectedRpIdHash[i]) { rpIdMatch = false; break }
   }
   if (!rpIdMatch) {
     log.warn("register: rpId mismatch", { accountId: body.accountId })
@@ -192,79 +203,59 @@ function handleGetChallenge(req: Request): Response {
 
 // ---------------------------------------------------------------------------
 // Route: POST /auth/verify-prf
-// Verify a PRF result and issue a short-lived sync session.
+// Verify the WebAuthn assertion and issue a short-lived sync session.
 // ---------------------------------------------------------------------------
 
 async function handleVerifyPrf(req: Request): Promise<Response> {
   if (req.method !== "POST") return methodNotAllowed()
   const body = await req.json() as {
     accountId: string
-    prfResult: string // base64url
-    saltHash: string // base64url of sha256(salt)
+    credentialId: string
     challenge: string
-    signature: string
+    prfResult: string
+    saltHash: string
     clientDataJSON: string
     authenticatorData: string
-    credentialId: string
+    signature: string
   }
 
-  const challenge2 = getChallenge(body.accountId)
-  if (!challenge2) return json({ error: "challenge expired or missing" }, 400)
-  if (challenge2 !== body.challenge) return json({ error: "challenge mismatch" }, 400)
+  const storedChallenge = getChallenge(body.accountId)
+  if (!storedChallenge) return json({ error: "challenge expired or missing" }, 400)
+  if (storedChallenge !== body.challenge) return json({ error: "challenge mismatch" }, 400)
 
-  // Verify the assertion signature over the challenge
-  const credential = await getStoredCredential(body.credentialId, {
+  const url = new URL(req.url)
+  const proof: SyncAuthProof = {
+    credentialId: body.credentialId,
+    challenge: body.challenge,
+    signature: body.signature,
+    clientDataJSON: body.clientDataJSON,
+    authenticatorData: body.authenticatorData,
+    prfSaltHash: body.saltHash,
+    expiresAt: new Date(Date.now() + 60_000).toISOString(),
+  }
+  const context: SyncRequestContext = {
     namespace: SYNC_NAMESPACE,
     accountId: body.accountId,
     documentId: "auth",
     method: "GET",
-  })
-  if (!credential) return json({ error: "credential not found" }, 404)
+    requestOrigin: url.origin,
+    requestRpId: url.hostname,
+  }
 
-  // Verify signature
-  const clientDataBytes = decodeBase64Url(body.clientDataJSON)
-  const authenticatorDataBytes = decodeBase64Url(body.authenticatorData)
-  const signatureBytes = normalizeWebAuthnEcdsaSignature(decodeBase64Url(body.signature))
-
-  // Import the stored SPKI key
-  const publicKey = await crypto.subtle.importKey(
-    "spki",
-    decodeBase64Url(credential.publicKeySpkiBase64Url).buffer,
-    { name: "ECDSA", namedCurve: "P-256", hash: "SHA-256" },
-    false,
-    ["verify"],
-  )
-
-  const clientDataHash = await sha256(clientDataBytes)
-  const signedData = concatBytes(authenticatorDataBytes, clientDataHash)
-  const valid = await crypto.subtle.verify(
-    { name: "ECDSA", hash: "SHA-256" },
-    publicKey,
-    signatureBytes,
-    signedData.buffer,
-  )
-
-  if (!valid) {
+  if (!(await webAuthnVerifier(proof, context))) {
     log.warn("verify-prf: signature invalid", { accountId: body.accountId })
     return json({ error: "signature verification failed" }, 403)
   }
 
-  // Issue sync session: store a short-lived session token in KV
   const sessionId = encodeBase64Url(crypto.getRandomValues(new Uint8Array(16)))
-  const expiresAt = new Date(Date.now() + 5 * 60 * 1000).toISOString() // 5 minutes
+  const expiresAt = new Date(Date.now() + 5 * 60 * 1000).toISOString()
   const keys = denomergeKvKeys({ namespace: SYNC_NAMESPACE, accountId: body.accountId })
   await kv.set(keys.syncSession(sessionId), { accountId: body.accountId, expiresAt })
   log.info("verify-prf: session issued", { accountId: body.accountId, expiresAt })
 
   challenges.delete(body.accountId)
 
-  return json({
-    ok: true,
-    sessionId,
-    expiresAt,
-    // Also return the prfSaltHash for client to include in subsequent sync requests
-    prfSaltHash: body.saltHash,
-  })
+  return json({ ok: true, sessionId, expiresAt, prfSaltHash: body.saltHash })
 }
 
 // ---------------------------------------------------------------------------
@@ -294,7 +285,7 @@ async function serveStatic(req: Request): Promise<Response> {
       ? "text/css"
       : fileName.endsWith(".js")
       ? "application/javascript"
-        : "text/html; charset=utf-8"
+      : "text/html; charset=utf-8"
     return new Response(body, { headers: { "Content-Type": contentType } })
   } catch {
     return json({ error: "not_found" }, 404)
@@ -308,22 +299,11 @@ async function serveStatic(req: Request): Promise<Response> {
 function handler(req: Request): Response | Promise<Response> {
   const url = new URL(req.url)
 
-  if (url.pathname === "/auth/register" && req.method === "POST") {
-    return handleRegister(req)
-  }
-  if (url.pathname === "/auth/challenge" && req.method === "GET") {
-    return handleGetChallenge(req)
-  }
-  if (url.pathname === "/auth/verify-prf" && req.method === "POST") {
-    return handleVerifyPrf(req)
-  }
+  if (url.pathname === "/auth/register" && req.method === "POST") return handleRegister(req)
+  if (url.pathname === "/auth/challenge" && req.method === "GET") return handleGetChallenge(req)
+  if (url.pathname === "/auth/verify-prf" && req.method === "POST") return handleVerifyPrf(req)
+  if (url.pathname.startsWith("/sync/")) return syncHandler(req)
 
-  // Sync endpoint
-  if (url.pathname.startsWith("/sync/")) {
-    return syncHandler(req)
-  }
-
-  // Static files
   return serveStatic(req)
 }
 
@@ -340,23 +320,6 @@ function json(value: unknown, status = 200): Response {
 
 function methodNotAllowed(): Response {
   return json({ error: "method_not_allowed" }, 405)
-}
-
-function concatBytes(...chunks: Uint8Array[]): Uint8Array {
-  const size = chunks.reduce((sum, chunk) => sum + chunk.byteLength, 0)
-  const out = new Uint8Array(size)
-  let offset = 0
-  for (const chunk of chunks) {
-    out.set(chunk, offset)
-    offset += chunk.byteLength
-  }
-  return out
-}
-
-function decodeBase64Url(value: string): Uint8Array {
-  const padded = value.replaceAll("-", "+").replaceAll("_", "/")
-    .padEnd(Math.ceil(value.length / 4) * 4, "=")
-  return Uint8Array.from(atob(padded), (char) => char.charCodeAt(0))
 }
 
 // ---------------------------------------------------------------------------

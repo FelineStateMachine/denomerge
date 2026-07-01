@@ -1,14 +1,22 @@
 import {
+  buildPrfAuthenticationOptions,
   clone,
   createBrowserAutomergeRepo,
   createLogger,
+  decodeBase64Url,
+  deriveDenomergePrfSalt,
+  encodeBase64Url,
   getChanges,
+  getFirstPrfResult,
   isValidAutomergeUrl,
   load,
   merge,
+  performPrfRegistration,
   save,
+  sha256,
   type AutomergeUrl,
   type DocHandle,
+  type PublicKeyCredentialWithPrf,
 } from "@felinestatemachine/denomerge"
 
 const log = createLogger("test-todo", { level: "debug" })
@@ -122,41 +130,20 @@ function renderTodos(items: Todo[]): void {
 }
 
 // ---------------------------------------------------------------------------
-// Crypto helpers
-// ---------------------------------------------------------------------------
-
-function b64urlEncode(bytes: ArrayBuffer | Uint8Array): string {
-  return btoa(String.fromCharCode(...new Uint8Array(bytes)))
-    .replaceAll("+", "-").replaceAll("/", "_").replaceAll("=", "")
-}
-
-function b64urlDecode(s: string): Uint8Array {
-  const padded = s.replaceAll("-", "+").replaceAll("_", "/")
-    .padEnd(Math.ceil(s.length / 4) * 4, "=")
-  return Uint8Array.from(atob(padded), (c) => c.charCodeAt(0))
-}
-
-async function sha256(data: Uint8Array): Promise<Uint8Array> {
-  return new Uint8Array(await crypto.subtle.digest("SHA-256", data))
-}
-
-// ---------------------------------------------------------------------------
 // WebAuthn registration
 // ---------------------------------------------------------------------------
 
 async function register(): Promise<void> {
   const rpId = location.hostname
-  const cred = await navigator.credentials.create({
-    publicKey: {
-      rp: { id: rpId, name: "test-todo" },
-      user: { id: crypto.getRandomValues(new Uint8Array(32)), name: "user", displayName: "user" },
-      challenge: crypto.getRandomValues(new Uint8Array(32)),
-      pubKeyCredParams: [{ type: "public-key", alg: -7 }],
-      authenticatorSelection: { residentKey: "required", requireResidentKey: true, userVerification: "required" },
-      extensions: { prf: {} },
-    },
-  }) as PublicKeyCredential | null
-  if (!cred) throw new Error("No credential returned")
+
+  const cred = await performPrfRegistration({
+    rpId,
+    rpName: "test-todo",
+    userId: crypto.getRandomValues(new Uint8Array(32)),
+    userName: accountId.slice(0, 8),
+    userDisplayName: accountId.slice(0, 8),
+    challenge: crypto.getRandomValues(new Uint8Array(32)),
+  }) as PublicKeyCredential
 
   const resp = cred.response as AuthenticatorAttestationResponse
   const authDataBuf = resp.getAuthenticatorData()
@@ -169,16 +156,16 @@ async function register(): Promise<void> {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       accountId,
-      credentialId: b64urlEncode(cred.rawId),
+      credentialId: encodeBase64Url(new Uint8Array(cred.rawId)),
       attestationData: {
-        clientDataJSON: b64urlEncode(resp.clientDataJSON),
-        authenticatorData: b64urlEncode(authDataBuf),
-        publicKey: b64urlEncode(pkBuf),
+        clientDataJSON: encodeBase64Url(new Uint8Array(resp.clientDataJSON)),
+        authenticatorData: encodeBase64Url(new Uint8Array(authDataBuf)),
+        publicKey: encodeBase64Url(new Uint8Array(pkBuf)),
       },
     }),
   }).then((r) => { if (!r.ok) throw new Error(`register → ${r.status}`) })
 
-  credentialId = b64urlEncode(cred.rawId)
+  credentialId = encodeBase64Url(new Uint8Array(cred.rawId))
   localStorage.setItem(KEYS.credId, credentialId)
   log.info("registered", { accountId, credentialId })
 }
@@ -188,31 +175,39 @@ async function register(): Promise<void> {
 // ---------------------------------------------------------------------------
 
 async function login(): Promise<void> {
-  if (!credentialId) throw new Error("No credential — register first")
-
   const { challenge, rpId } = await fetch(
     `${ORIGIN}/auth/challenge?accountId=${encodeURIComponent(accountId)}`,
   ).then((r) => r.json()) as { challenge: string; rpId: string }
 
-  const saltBytes = crypto.getRandomValues(new Uint8Array(32))
+  // Stable PRF salt scoped to this account — deterministic across logins on the same device.
+  const salt = await deriveDenomergePrfSalt({ rpId, realm: accountId })
+
+  const options = buildPrfAuthenticationOptions({
+    rpId,
+    challenge: decodeBase64Url(challenge),
+    salt,
+    // Omit allowCredentialIds when unknown: browser surfaces all passkeys for this RP ID
+    // (discoverable credentials), letting the user pick one.
+    ...(credentialId ? { allowCredentialIds: [decodeBase64Url(credentialId)] } : {}),
+  })
 
   const assertion = await navigator.credentials.get({
-    publicKey: {
-      challenge: b64urlDecode(challenge),
-      rpId,
-      allowCredentials: [{ type: "public-key", id: b64urlDecode(credentialId) }],
-      userVerification: "required",
-      extensions: { prf: { eval: { first: saltBytes } } },
-    },
+    publicKey: options,
   }) as PublicKeyCredential | null
   if (!assertion) throw new Error("No assertion")
 
   const aResp = assertion.response as AuthenticatorAssertionResponse
-  const extResults = assertion.getClientExtensionResults() as { prf?: { results?: { first?: ArrayBuffer } } }
-  const prfResult = extResults?.prf?.results?.first
+  const prfResult = getFirstPrfResult(assertion as unknown as PublicKeyCredentialWithPrf)
   if (!prfResult) throw new Error("No PRF result — passkey may not support PRF extension")
 
-  const saltHash = b64urlEncode(await sha256(saltBytes))
+  // Discoverable credential path: store the credential ID the OS returned.
+  if (!credentialId) {
+    credentialId = encodeBase64Url(new Uint8Array(assertion.rawId))
+    localStorage.setItem(KEYS.credId, credentialId)
+    log.info("credential discovered", { credentialId })
+  }
+
+  const saltHash = encodeBase64Url(await sha256(salt))
 
   const { sessionId: sid, expiresAt } = await fetch(`${ORIGIN}/auth/verify-prf`, {
     method: "POST",
@@ -221,11 +216,11 @@ async function login(): Promise<void> {
       accountId,
       credentialId,
       challenge,
-      prfResult: b64urlEncode(prfResult),
+      prfResult: encodeBase64Url(prfResult),
       saltHash,
-      clientDataJSON: b64urlEncode(aResp.clientDataJSON),
-      authenticatorData: b64urlEncode(aResp.authenticatorData),
-      signature: b64urlEncode(aResp.signature),
+      clientDataJSON: encodeBase64Url(new Uint8Array(aResp.clientDataJSON)),
+      authenticatorData: encodeBase64Url(new Uint8Array(aResp.authenticatorData)),
+      signature: encodeBase64Url(new Uint8Array(aResp.signature)),
     }),
   }).then((r) => { if (!r.ok) throw new Error(`verify-prf → ${r.status}`); return r.json() }) as { sessionId: string; expiresAt: string }
 
@@ -234,6 +229,20 @@ async function login(): Promise<void> {
   localStorage.setItem(KEYS.session, sessionId)
   localStorage.setItem(KEYS.sessionExpires, sessionExpiresAt.toISOString())
   log.info("session issued", { accountId, expiresAt })
+}
+
+// ---------------------------------------------------------------------------
+// Session expiry
+// ---------------------------------------------------------------------------
+
+function handleSessionExpiry(): void {
+  sessionId = null
+  sessionExpiresAt = null
+  localStorage.removeItem(KEYS.session)
+  localStorage.removeItem(KEYS.sessionExpires)
+  showLoggedOut()
+  setStatus("Session expired — log in again to sync.")
+  log.info("session expired, cleared local state")
 }
 
 // ---------------------------------------------------------------------------
@@ -252,9 +261,10 @@ async function push(): Promise<void> {
   await fetch(`${ORIGIN}/sync/${NAMESPACE}/${accountId}/${DOCUMENT_ID}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json", "x-denomerge-sync-proof": syncProof() },
-    body: JSON.stringify({ bytesBase64: b64urlEncode(save(doc)) }),
+    body: JSON.stringify({ bytesBase64: encodeBase64Url(save(doc)) }),
   }).then((r) => {
-    if (!r.ok) log.warn("push failed", { status: r.status })
+    if (r.status === 401) handleSessionExpiry()
+    else if (!r.ok) log.warn("push failed", { status: r.status })
     else log.debug("push ok")
   }).catch((e) => log.error("push error", { err: String(e) }))
 }
@@ -265,11 +275,12 @@ async function pull(): Promise<void> {
     const res = await fetch(`${ORIGIN}/sync/${NAMESPACE}/${accountId}/${DOCUMENT_ID}`, {
       headers: { "x-denomerge-sync-proof": syncProof() },
     })
+    if (res.status === 401) { handleSessionExpiry(); return }
     if (!res.ok || res.status === 204) return
     const { bytesBase64 } = await res.json() as { bytesBase64?: string }
     if (!bytesBase64) return
 
-    const remoteDoc = load<TodoDoc>(b64urlDecode(bytesBase64))
+    const remoteDoc = load<TodoDoc>(decodeBase64Url(bytesBase64))
     const localDoc = handle.docSync()!
     const merged = merge(clone(localDoc), remoteDoc)
     const incoming = getChanges(localDoc, merged)
