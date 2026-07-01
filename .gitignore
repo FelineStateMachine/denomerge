@@ -2,8 +2,12 @@
 coverage/
 dist/
 !example/dist/
+example/dist/*.wasm
 .DS_Store
 .env
 .env.*
 !.env.example
 node_modules/
+.claude/
+spike/**/evidence/
+.gitnexus/
