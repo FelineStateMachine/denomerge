@@ -1,6 +1,7 @@
 .data/
 coverage/
 dist/
+!example/dist/
 .DS_Store
 .env
 .env.*

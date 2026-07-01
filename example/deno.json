@@ -14,6 +14,7 @@
   },
   "nodeModulesDir": "auto",
   "tasks": {
+    "build": "deno run --allow-read --allow-write --allow-net --allow-env --allow-run build.ts",
     "start": "deno run --unstable-kv --allow-net --allow-env --allow-read --allow-write main.ts",
     "dev": "deno run --unstable-kv --allow-net --allow-env --allow-read --allow-write --watch main.ts"
   },

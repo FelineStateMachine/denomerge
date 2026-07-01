@@ -261,7 +261,8 @@ async function handleVerifyPrf(req: Request): Promise<Response> {
 const STATIC_FILES = new Map<string, string>([
   ["/", "index.html"],
   ["/style.css", "style.css"],
-  ["/app.js", "app.js"],
+  ["/app.js", "dist/app.bundle.js"],
+  ["/automerge_wasm_bg.wasm", "dist/automerge_wasm_bg.wasm"],
 ])
 
 async function serveStatic(req: Request): Promise<Response> {
@@ -281,6 +282,8 @@ async function serveStatic(req: Request): Promise<Response> {
       ? "text/css"
       : fileName.endsWith(".js")
       ? "application/javascript"
+      : fileName.endsWith(".wasm")
+      ? "application/wasm"
       : "text/html; charset=utf-8"
     return new Response(body, { headers: { "Content-Type": contentType } })
   } catch {
